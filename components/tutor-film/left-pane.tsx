@@ -11,6 +11,7 @@ import {
   Film,
   Clapperboard,
   Loader2,
+  Music,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Switch } from "@/components/ui/switch"
@@ -450,6 +451,23 @@ export function LeftPane() {
                 Scene clips are concatenated in order. This master will be sent to Lyria for
                 the score, then mixed into the final export.
               </p>
+              <div className="mt-3 flex items-center justify-center gap-2 rounded-md border border-amber-500/20 bg-background/60 px-2 py-1.5 text-[10px] text-muted-foreground">
+                <Music className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span className="text-left leading-snug">
+                  <span className="font-medium text-foreground">Background music</span>
+                  {project.musicUrl ? (
+                    <span className="ml-1.5 inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <Check className="h-3 w-3" />
+                      Ready
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 inline-flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Generating…
+                    </span>
+                  )}
+                </span>
+              </div>
             </motion.div>
           )}
 

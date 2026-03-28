@@ -163,3 +163,13 @@ export interface StitchScenesRequest {
 export interface StitchScenesResponse {
   assembledScenesVideoUrl: string
 }
+
+export interface GenerateMusicRequest {
+  projectId: string
+  musicMood: string
+  durationSeconds: number
+}
+
+export interface GenerateMusicResponse {
+  musicUrl: string
+}

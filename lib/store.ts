@@ -109,6 +109,7 @@ export interface TutorFilmStore {
 
   generateVideoForScene: (sceneId: string) => Promise<void>
   stitchSceneVideosForProject: () => Promise<void>
+  generateMusicForProject: () => Promise<void>
   loadLatestProjectFromDb: () => Promise<void>
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -396,6 +397,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
             status: 'stitching',
           },
         })
+        void get().generateMusicForProject()
         await get().stitchSceneVideosForProject()
         break
       }
@@ -531,6 +533,37 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     } catch (e) {
       console.error('generateVideoForScene:', e)
       get().updateScene(sceneId, { status: 'error' })
+    }
+  },
+
+  generateMusicForProject: async () => {
+    const project = get().project
+    if (!project?.id || project.id === 'pending' || !project.script) return
+
+    const durationSeconds = Math.max(
+      8,
+      project.scenes.reduce((acc, s) => acc + (Number(s.durationSeconds) || 6), 0),
+    )
+
+    try {
+      console.log("Starting client-side music fetch for mood:", project.script.musicMood)
+      const res = await fetch('/api/generate-music', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          musicMood: project.script.musicMood,
+          durationSeconds,
+        }),
+      })
+      const json = (await res.json()) as { musicUrl?: string; error?: string }
+      if (!res.ok || !json.musicUrl) {
+        console.error('generate-music failed:', json.error ?? res.status)
+        return
+      }
+      get().setMusicUrl(json.musicUrl)
+    } catch (e) {
+      console.error('generateMusicForProject:', e)
     }
   },
 
