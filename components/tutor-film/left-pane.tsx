@@ -43,6 +43,7 @@ export function LeftPane() {
   )
   const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
   const generateMusicForProject = useTutorFilmStore((s) => s.generateMusicForProject)
+  const stitchFinalVideoForProject = useTutorFilmStore((s) => s.stitchFinalVideoForProject)
 
   const useAnimatedTeacher = avatarType !== "none"
 
@@ -505,14 +506,19 @@ export function LeftPane() {
           {project?.stage === "final" &&
             project.assembledScenesVideoUrl &&
             project.musicUrl &&
-            !project.finalVideoUrl && (
+            !project.finalVideoUrl &&
+            (project.status === "final_preview" || project.status === "muxing") && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="space-y-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-3"
               >
                 <p className="text-center text-xs font-semibold text-foreground">
-                  Preview — assembled video &amp; music bed
+                  Preview — video &amp; music bed
+                </p>
+                <p className="text-center text-[10px] leading-snug text-muted-foreground">
+                  Watch and listen below. When you are happy with the track, confirm to mix the
+                  final export (dialogue + ducked music).
                 </p>
                 <video
                   src={project.assembledScenesVideoUrl}
@@ -536,16 +542,23 @@ export function LeftPane() {
                     Mixing final export (music ducked under dialogue)…
                   </p>
                 ) : null}
+                {project.status === "final_preview" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 w-full text-[10px] font-semibold"
+                    onClick={() => void stitchFinalVideoForProject()}
+                  >
+                    <Check className="mr-1.5 h-3.5 w-3.5" />
+                    Confirm &amp; export final video
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="h-8 w-full text-[10px]"
-                  disabled={
-                    project.status === "muxing" ||
-                    project.status === "stitching" ||
-                    project.status === "composing_music"
-                  }
+                  disabled={project.status === "muxing"}
                   onClick={() => void generateMusicForProject()}
                 >
                   <RefreshCw className="mr-1.5 h-3 w-3" />
@@ -579,7 +592,7 @@ export function LeftPane() {
                   onClick={() => void generateMusicForProject()}
                 >
                   <RefreshCw className="mr-1.5 h-3 w-3" />
-                  Regenerate music &amp; remix
+                  Regenerate music
                 </Button>
               ) : null}
             </motion.div>
@@ -704,18 +717,42 @@ export function LeftPane() {
         project?.stage === "final" &&
         (project.status === "stitching" ||
           project.status === "composing_music" ||
-          project.status === "muxing") ? (
+          project.status === "muxing" ||
+          project.status === "final_preview") ? (
           <Button
             type="button"
-            disabled
-            className="h-9 w-full gap-1.5 text-xs font-semibold opacity-90"
+            disabled={project.status !== "final_preview"}
+            className={cn(
+              "h-9 w-full gap-1.5 text-xs font-semibold",
+              project.status === "final_preview" && "opacity-90"
+            )}
+            onClick={
+              project.status === "final_preview"
+                ? () => void stitchFinalVideoForProject()
+                : undefined
+            }
           >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {project.status === "muxing"
-              ? "Mixing final video…"
-              : project.status === "composing_music"
-                ? "Composing music…"
-                : "Assembling video…"}
+            {project.status === "muxing" ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Mixing final video…
+              </>
+            ) : project.status === "composing_music" ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Composing music…
+              </>
+            ) : project.status === "stitching" ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Assembling video…
+              </>
+            ) : project.status === "final_preview" ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Confirm final export
+              </>
+            ) : null}
           </Button>
         ) : null}
       </div>

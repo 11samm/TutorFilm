@@ -12,6 +12,7 @@ export type ProjectStatus =
   | 'generating_videos'
   | 'composing_music'
   | 'stitching'
+  | 'final_preview'
   | 'muxing'
   | 'complete'
   | 'error'

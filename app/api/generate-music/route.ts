@@ -87,10 +87,11 @@ export async function POST(request: Request) {
   }
 
   const prompt = [
-    'Create an instrumental background track for an educational video.',
-    `The mood is: ${musicMood}.`,
-    `Target approximate length: about ${Math.round(durationSeconds)} seconds (instrumental bed, no loud peaks).`,
-    'Keep it subtle so a voiceover can be heard over it — no vocals unless wordless pads.',
+    'This request is ONLY for a background score — not a song, not a lead melody that competes with speech.',
+    'Generate a subtle, low-in-the-mix instrumental bed for an educational video: ambient pads, light rhythm, or soft orchestral texture that supports the lesson without drawing attention.',
+    `Mood and character: ${musicMood}.`,
+    `Approximate target length: about ${Math.round(durationSeconds)} seconds. Keep dynamics gentle — no loud peaks; the music must stay under a spoken voiceover.`,
+    'STRICTLY INSTRUMENTAL. ABSOLUTELY NO VOCALS, NO LYRICS, AND NO CHOIR. This is a subtle background score meant to sit quietly beneath a spoken voiceover. Do not include any human voices.',
   ].join(' ')
 
   const ai = new GoogleGenAI({ apiKey })

@@ -111,8 +111,8 @@ export async function POST(request: Request) {
 
     /** Mix dialogue + ducked music; `duration=first` matches video length; `-shortest` trims long music per product spec. */
     const filterComplex = hasAudio
-      ? '[1:a]volume=0.15[mus];[0:a][mus]amix=inputs=2:duration=first:dropout_transition=2[aout]'
-      : '[1:a]volume=0.15[aout]'
+      ? '[1:a]volume=0.11[mus];[0:a][mus]amix=inputs=2:duration=first:dropout_transition=2[aout]'
+      : '[1:a]volume=0.11[aout]'
 
     const args = [
       '-y',

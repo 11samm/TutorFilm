@@ -544,6 +544,20 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     const project = get().project
     if (!project?.id || project.id === 'pending' || !project.script) return
 
+    /** Parallel with scene stitch on first finalize — do not clobber `stitching` or clear music yet. */
+    if (get().project?.status !== 'stitching') {
+      set({
+        project: {
+          ...get().project!,
+          status: 'composing_music',
+          finalVideoUrl: null,
+          musicUrl: null,
+        },
+      })
+    } else if (get().project?.finalVideoUrl) {
+      set({ project: { ...get().project!, finalVideoUrl: null } })
+    }
+
     const durationSeconds = Math.max(
       8,
       project.scenes.reduce((acc, s) => acc + (Number(s.durationSeconds) || 6), 0),
@@ -567,8 +581,8 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       }
       get().setMusicUrl(json.musicUrl)
       const after = get().project
-      if (after?.assembledScenesVideoUrl) {
-        void get().stitchFinalVideoForProject()
+      if (after?.assembledScenesVideoUrl && after.status !== 'stitching') {
+        set({ project: { ...get().project!, status: 'final_preview' } })
       }
     } catch (e) {
       console.error('generateMusicForProject:', e)
@@ -649,12 +663,9 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         project: {
           ...get().project!,
           assembledScenesVideoUrl: json.assembledScenesVideoUrl ?? null,
-          status: musicUrl ? 'muxing' : 'composing_music',
+          status: musicUrl ? 'final_preview' : 'composing_music',
         },
       })
-      if (musicUrl) {
-        await get().stitchFinalVideoForProject()
-      }
     } catch (e) {
       console.error('stitchSceneVideosForProject:', e)
       set({ project: { ...get().project!, status: 'error' } })

@@ -59,7 +59,9 @@ export function RightPane() {
     project?.status === "scripting" ||
     project?.status === "generating_assets" ||
     project?.status === "generating_videos" ||
-    project?.status === "stitching"
+    project?.status === "stitching" ||
+    project?.status === "composing_music" ||
+    project?.status === "muxing"
   const isComplete = project?.status === "complete"
 
   const masterVideoUrl =
@@ -116,6 +118,9 @@ export function RightPane() {
     if (project?.status === "generating_assets") return "Generating keyframes..."
     if (project?.status === "generating_videos") return "Animating scenes..."
     if (project?.status === "stitching") return "Assembling lesson video..."
+    if (project?.status === "composing_music") return "Composing background music..."
+    if (project?.status === "muxing") return "Mixing final export..."
+    if (project?.status === "final_preview") return "Preview — confirm on the left"
     if (!galleryScenes.length) return "Awaiting confirmation"
     return "Gallery"
   }
