@@ -86,6 +86,82 @@ function deriveStageFromLoadedScenes(scenes: Scene[]): ProjectStage {
   return 'script_approval'
 }
 
+/**
+ * Continuous lesson progress 0–1 for the right-pane rail (6 steps). Combines `stage`,
+ * `status`, and per-scene thumbnail/video completion so every phase moves the bar.
+ *
+ * Segments: Script | Avatar and Voice | Thumbnails | Animations | Music Score | Final Render
+ */
+export function getLessonProgressFraction(project: Project | null): number {
+  if (!project) return 0
+
+  const { stage, status, scenes } = project
+  const n = scenes.length
+
+  const S = 1 / 6
+
+  const thumbRatio = n > 0 ? scenes.filter((s) => s.thumbnailUrl).length / n : 0
+  const videoRatio = n > 0 ? scenes.filter((s) => s.videoUrl).length / n : 0
+
+  if (status === 'scripting') {
+    return 0.45 * S
+  }
+
+  if (stage === 'script_approval') {
+    if (status === 'idle') {
+      const hasScript = Boolean(project.script)
+      if (n === 0 && hasScript) {
+        return 0.55 * S
+      }
+      if (n > 0 && hasScript) {
+        return S + 0.55 * S
+      }
+      return 0.35 * S
+    }
+    return 0.5 * S
+  }
+
+  if (stage === 'thumbnail_approval') {
+    if (status === 'generating_assets') {
+      return 2 * S + S * thumbRatio
+    }
+    return 2 * S + S * Math.max(thumbRatio, n > 0 ? 0.92 : 0)
+  }
+
+  if (stage === 'video_approval') {
+    if (status === 'generating_videos') {
+      return 3 * S + S * videoRatio
+    }
+    return 3 * S + S * Math.max(videoRatio, n > 0 ? 0.92 : 0)
+  }
+
+  if (stage === 'final') {
+    if (status === 'complete') return 1
+    if (status === 'composing_music') {
+      return 4 * S + 0.55 * S
+    }
+    if (status === 'stitching') {
+      return 5 * S + 0.2 * S
+    }
+    if (status === 'muxing') {
+      return 5 * S + 0.55 * S
+    }
+    if (status === 'final_preview') {
+      return 5 * S + 0.88 * S
+    }
+    const map: Partial<Record<ProjectStatus, number>> = {
+      idle: 5 * S + 0.25 * S,
+      generating_videos: 3 * S + 0.85 * S,
+    }
+    if (status && map[status] != null) return map[status]!
+    return 5 * S + 0.3 * S
+  }
+
+  if (stage === 'setup') return 0.12 * S
+
+  return 0.15 * S
+}
+
 export interface TutorFilmStore {
   // ── Setup phase ────────────────────────────────────────────────────────────
   lessonData: LessonData | null

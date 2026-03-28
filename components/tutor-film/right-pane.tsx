@@ -25,18 +25,18 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { useTutorFilmStore } from "@/lib/store"
+import { getLessonProgressFraction, useTutorFilmStore } from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
 import { maxWordsForScene } from "@/lib/validate-script"
 
-const generationSteps = [
-  { id: 1, label: "Script drafted", description: "AI has written the lesson script" },
-  { id: 2, label: "Art style locked", description: "Visual direction confirmed" },
-  { id: 3, label: "Character designed", description: "Teacher avatar finalized" },
-  { id: 4, label: "Scenes composed", description: "Storyboard complete" },
-  { id: 5, label: "Voiceover recorded", description: "Audio generation done" },
-  { id: 6, label: "Rendering video", description: "Final video being assembled" },
-]
+const LESSON_STEPS = [
+  "Script",
+  "Avatar and Voice",
+  "Thumbnails",
+  "Animations",
+  "Music Score",
+  "Final Render",
+] as const
 
 function wordCountBadgeClass(wordCount: number, maxWords: number) {
   if (maxWords <= 0) {
@@ -70,17 +70,12 @@ export function RightPane() {
   const scenes = project?.scenes ?? []
   const galleryScenes = scenes.filter((s) => s.confirmed)
 
-  const generationStep = isGenerating
-    ? project?.status === "scripting"
-      ? 0
-      : project?.status === "generating_assets"
-        ? 1
-        : project?.status === "generating_videos"
-          ? 2
-          : 0
-    : galleryScenes.length
-      ? 1
-      : 0
+  /** Thumbnails in Scene Breakdown only after thumbnail stage is approved (left pane). */
+  const showApprovedThumbnails =
+    project?.stage === "video_approval" || project?.stage === "final"
+
+  const progressFraction = getLessonProgressFraction(project)
+  const progressPercent = Math.min(100, Math.round(progressFraction * 100))
 
   const script = project?.script
   const voiceLabel = script?.voiceCharacterId
@@ -100,16 +95,13 @@ export function RightPane() {
     { label: "Pacing", value: "Gentle", icon: Zap },
   ]
 
-  const getStepStatus = (stepIndex: number) => {
-    if (isComplete) return "complete"
-    if (!isGenerating && !galleryScenes.length) return "pending"
-    if (!isGenerating && galleryScenes.length) {
-      if (stepIndex === 0) return "complete"
-      return "pending"
-    }
-    if (stepIndex < generationStep) return "complete"
-    if (stepIndex === generationStep) return "active"
-    return "pending"
+  const getLessonStepCircleStatus = (index: number) => {
+    const n = LESSON_STEPS.length
+    const f = progressFraction
+    if (f >= 1) return "complete" as const
+    if (f >= (index + 1) / n) return "complete" as const
+    if (f >= index / n && f < (index + 1) / n) return "active" as const
+    return "pending" as const
   }
 
   const getStatusText = () => {
@@ -167,59 +159,68 @@ export function RightPane() {
       </div>
 
       <div className="border-b border-border bg-card/20 px-5 py-4">
-        <div className="flex items-center gap-6">
-          <div className="flex flex-1 items-center gap-1">
-            {generationSteps.map((step, index) => {
-              const status = getStepStatus(index)
-              return (
-                <div key={step.id} className="flex flex-1 items-center">
-                  <div className="group relative flex flex-col items-center">
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-full transition-all",
-                        status === "complete" && "bg-primary text-primary-foreground",
-                        status === "active" &&
-                          "bg-primary/20 text-primary ring-2 ring-primary ring-offset-2 ring-offset-background",
-                        status === "pending" && "bg-secondary text-muted-foreground"
-                      )}
-                    >
-                      {status === "complete" ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : status === "active" ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Circle className="h-4 w-4" />
-                      )}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-6">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              {LESSON_STEPS.map((label, index) => {
+                const status = getLessonStepCircleStatus(index)
+                return (
+                  <div key={label} className="flex min-w-0 flex-1 items-center">
+                    <div className="group relative flex min-w-0 flex-1 flex-col items-center">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all",
+                          status === "complete" &&
+                            "bg-primary text-primary-foreground shadow-sm",
+                          status === "active" &&
+                            "bg-primary/15 text-primary ring-2 ring-primary ring-offset-2 ring-offset-background animate-pulse",
+                          status === "pending" &&
+                            "border border-border/80 bg-muted/40 text-muted-foreground/60"
+                        )}
+                      >
+                        {status === "complete" ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : status === "active" ? (
+                          <Circle className="h-4 w-4 fill-primary/35 text-primary" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground/50" />
+                        )}
+                      </div>
+                      <span className="mt-1.5 hidden max-w-[4.75rem] truncate text-center text-[8px] font-medium leading-tight text-muted-foreground sm:block">
+                        {label}
+                      </span>
+                      <div className="pointer-events-none absolute -bottom-7 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-lg transition-opacity group-hover:opacity-100 sm:hidden">
+                        {label}
+                      </div>
                     </div>
-                    <div className="pointer-events-none absolute -bottom-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-                      {step.label}
-                    </div>
+                    {index < LESSON_STEPS.length - 1 && (
+                      <div
+                        className={cn(
+                          "mx-0.5 h-0.5 min-w-[8px] flex-1 transition-colors",
+                          progressFraction >= (index + 1) / LESSON_STEPS.length
+                            ? "bg-primary"
+                            : "bg-border"
+                        )}
+                      />
+                    )}
                   </div>
-                  {index < generationSteps.length - 1 && (
-                    <div
-                      className={cn(
-                        "h-0.5 flex-1 transition-colors",
-                        getStepStatus(index) === "complete" ? "bg-primary" : "bg-border"
-                      )}
-                    />
-                  )}
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-2">
+              <span className="text-xs font-medium text-muted-foreground">Progress</span>
+              <span className="text-lg font-bold tabular-nums text-primary">
+                {progressPercent}%
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-2">
-            <span className="text-xs font-medium text-muted-foreground">Progress</span>
-            <span className="text-lg font-bold text-primary">
-              {isComplete
-                ? "100"
-                : isGenerating
-                  ? Math.round(((generationStep + 1) / generationSteps.length) * 100)
-                  : galleryScenes.length
-                    ? Math.min(100, Math.round((1 / generationSteps.length) * 100))
-                    : 0}
-              %
-            </span>
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted/80">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
           </div>
         </div>
 
@@ -311,6 +312,11 @@ export function RightPane() {
                             loop
                             playsInline
                           />
+                        ) : !showApprovedThumbnails ? (
+                          <div
+                            className="absolute inset-0 rounded-md bg-white/5 animate-pulse"
+                            aria-hidden
+                          />
                         ) : scene.status === "thumbnail_generating" ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
                             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
@@ -321,7 +327,10 @@ export function RightPane() {
                           </div>
                         ) : scene.thumbnailUrl ? (
                           <div className="relative h-full w-full">
-                            <img
+                            <motion.img
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 0.5 }}
                               src={scene.thumbnailUrl}
                               alt={`Scene ${scene.order} keyframe`}
                               className="relative z-0 h-full w-full object-cover"

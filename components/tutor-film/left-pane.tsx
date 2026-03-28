@@ -296,44 +296,46 @@ export function LeftPane() {
               {scenesOrdered.map((scene) => (
                 <div
                   key={scene.id}
-                  className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
+                  className="flex min-h-0 flex-row overflow-hidden rounded-lg border border-border/60 bg-background/40"
                 >
-                  <div className="relative h-24 w-full bg-muted/30 sm:h-28">
-                    {scene.status === "thumbnail_generating" ? (
-                      <div className="flex h-full flex-col items-center justify-center gap-1">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                        <span className="text-[10px] text-muted-foreground">
-                          Generating…
-                        </span>
-                      </div>
-                    ) : scene.thumbnailUrl ? (
-                      <button
-                        type="button"
-                        className="flex h-full w-full cursor-zoom-in items-center justify-center bg-muted/20 p-0"
-                        onClick={() => setThumbnailLightboxUrl(scene.thumbnailUrl)}
-                        aria-label="Open thumbnail full size"
-                      >
-                        <img
-                          src={scene.thumbnailUrl}
-                          alt=""
-                          className="max-h-full max-w-full object-contain"
-                        />
-                      </button>
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
-                        No thumbnail
-                      </div>
-                    )}
+                  <div className="min-w-0 flex-[3]">
+                    <div className="relative aspect-video w-full bg-muted/30">
+                      {scene.status === "thumbnail_generating" ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                          <span className="text-[10px] text-muted-foreground">
+                            Generating…
+                          </span>
+                        </div>
+                      ) : scene.thumbnailUrl ? (
+                        <button
+                          type="button"
+                          className="absolute inset-0 flex cursor-zoom-in items-center justify-center overflow-hidden bg-muted/20 p-0"
+                          onClick={() => setThumbnailLightboxUrl(scene.thumbnailUrl)}
+                          aria-label="Open thumbnail full size"
+                        >
+                          <img
+                            src={scene.thumbnailUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                          No thumbnail
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
-                    <span className="text-[10px] font-medium text-muted-foreground">
+                  <div className="flex min-w-[5.5rem] flex-[1] flex-col justify-center gap-2 border-l border-border/50 px-2.5 py-2 sm:min-w-[6.5rem] sm:px-3">
+                    <p className="text-xs font-semibold leading-tight text-foreground">
                       Scene {scene.order}
-                    </span>
+                    </p>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 gap-1 px-2 text-[10px]"
+                      className="h-8 w-full shrink-0 gap-1 px-2 text-[10px] sm:w-auto sm:self-start"
                       disabled={
                         scene.status === "thumbnail_generating" || busyPipeline
                       }
