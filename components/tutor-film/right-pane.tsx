@@ -53,6 +53,7 @@ function wordCountBadgeClass(wordCount: number, maxWords: number) {
 export function RightPane() {
   const [isPlaying, setIsPlaying] = useState(false)
   const project = useTutorFilmStore((s) => s.project)
+  const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
 
   const isGenerating = project?.status === "scripting"
   const generationStep = isGenerating ? 0 : project?.scenes?.length ? 1 : 0
@@ -286,11 +287,24 @@ export function RightPane() {
                             <img
                               src={scene.thumbnailUrl}
                               alt={`Scene ${scene.order} keyframe`}
-                              className="h-full w-full object-cover"
+                              className="relative z-0 h-full w-full object-cover"
                               loading="lazy"
                             />
+                            {scene.status === "thumbnail_ready" && !scene.videoUrl ? (
+                              <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center pb-4">
+                                <Button
+                                  type="button"
+                                  size="lg"
+                                  className="pointer-events-auto gap-2 border-2 border-primary-foreground/30 bg-primary font-semibold text-primary-foreground shadow-xl shadow-primary/40 ring-2 ring-background/90 hover:bg-primary/95"
+                                  onClick={() => void generateVideoForScene(scene.id)}
+                                >
+                                  <span aria-hidden>🎬</span>
+                                  Generate Video
+                                </Button>
+                              </div>
+                            ) : null}
                             {scene.status === "video_generating" && (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/65 p-4 backdrop-blur-[2px]">
+                              <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-background/65 p-4 backdrop-blur-[2px]">
                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                 <p className="text-center text-xs font-medium tracking-wide text-foreground">
                                   Animating with Veo...

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { useTutorFilmStore } from "@/lib/store"
 import {
   FileText,
   Upload,
@@ -47,11 +48,16 @@ const targetAgeOptions: {
 ]
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
+  const loadLatestProjectFromDb = useTutorFilmStore((s) => s.loadLatestProjectFromDb)
+  const setHasStarted = useTutorFilmStore((s) => s.setHasStarted)
+
   const [lessonPrompt, setLessonPrompt] = useState("")
   const [duration, setDuration] = useState([30])
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [targetAge, setTargetAge] = useState<TargetAgeBand | null>(null)
+  const [devLoading, setDevLoading] = useState(false)
+  const [devError, setDevError] = useState<string | null>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -85,6 +91,19 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
 
   const hasSource = lessonPrompt.trim().length > 0 || uploadedFile !== null
   const isValid = hasSource && targetAge !== null
+
+  const handleLoadLatestDev = useCallback(async () => {
+    setDevError(null)
+    setDevLoading(true)
+    try {
+      await loadLatestProjectFromDb()
+      setHasStarted(true)
+    } catch (e) {
+      setDevError(e instanceof Error ? e.message : "Could not load the latest project")
+    } finally {
+      setDevLoading(false)
+    }
+  }, [loadLatestProjectFromDb, setHasStarted])
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
@@ -232,6 +251,24 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
             <span>Start Creating</span>
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
+
+          <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4">
+            <p className="text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Dev mode
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLoadLatestDev}
+              disabled={devLoading}
+              className="h-10 w-full border-amber-500/40 bg-amber-500/5 text-sm font-semibold text-amber-900 hover:bg-amber-500/10 dark:text-amber-100"
+            >
+              {devLoading ? "Loading…" : "Load Latest Project (Dev Mode)"}
+            </Button>
+            {devError ? (
+              <p className="text-center text-xs text-destructive">{devError}</p>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -31,13 +31,13 @@ export function validateScenes(scenes: GeminiRawScene[]): {
     const wordCount = countWords(s.dialogue)
     const maxWords = maxWordsForScene(s.durationSeconds)
 
-    if (s.durationSeconds > 8) {
+    if (s.durationSeconds < 4 || s.durationSeconds > 8) {
       violations.push({
         order: s.order,
         wordCount,
         maxWords,
         durationSeconds: s.durationSeconds,
-        reason: 'durationSeconds must be at most 8',
+        reason: 'durationSeconds must be between 4 and 8 inclusive',
       })
       continue
     }

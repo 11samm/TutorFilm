@@ -86,7 +86,7 @@ function buildResponseSchema() {
             durationSeconds: {
               type: Type.INTEGER,
               description:
-                'The duration of the scene in seconds. MUST be an integer between 1 and 8.',
+                'The duration of the scene in seconds. MUST be an integer between 4 and 8.',
             },
             dialogue: {
               type: Type.STRING,
@@ -109,7 +109,7 @@ function buildSystemInstruction(req: GenerateScriptRequest): string {
   const visualAvatarRule = avatarVisualDirective(avatarType)
   const dialogueAgeRule = targetAgeDialogueGuidance(targetAge)
 
-  return `You are the Director. The user wants a video of exactly ${targetDurationSeconds} seconds total. You must break this down into multiple scenes. NO SCENE CAN BE LONGER THAN 8 SECONDS. You decide the duration of each scene to fit the pacing, but the sum of all \`durationSeconds\` MUST equal ${targetDurationSeconds}. For the dialogue, strictly follow the rule of ~2.5 words per second (e.g., a 4-second scene gets max 10 words, an 8-second scene gets max 20 words).
+  return `You are the Director. The user wants a video of exactly ${targetDurationSeconds} seconds total. You must break this down into multiple scenes. Every scene MUST be between 4 and 8 seconds long. You decide the duration of each scene to fit the pacing, but the sum of all \`durationSeconds\` MUST equal ${targetDurationSeconds}. For the dialogue, strictly follow the rule of ~2.5 words per second (e.g., a 4-second scene gets max 10 words, an 8-second scene gets max 20 words).
 
 Your output must be ONLY valid JSON matching the enforced response schema — no markdown fences, no commentary.
 
@@ -124,7 +124,7 @@ DECOUPLING (CRITICAL — DO NOT VIOLATE):
 - Never use voiceCharacterId to pick what the on-screen character looks like; visuals follow avatarType only.
 
 CRITICAL RULES:
-- Each scene MUST include integer "durationSeconds" from 1 to 8 inclusive.
+- Each scene MUST include integer "durationSeconds" between 4 and 8 inclusive.
 - The sum of every scene's "durationSeconds" MUST equal exactly ${targetDurationSeconds}.
 - Each scene's "dialogue" word count MUST NOT exceed Math.floor(durationSeconds * 2.5) words for that scene.
 - Each "visualPrompt" must describe cinematic shots in a Pixar / Disney Junior–style 3D animation look (bright, readable, child-friendly) while obeying the visual avatar rules above.
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
 CORRECTION REQUIRED — your previous JSON failed validation.
 - Duration sum: got ${budget.sum}, must equal ${req.targetDurationSeconds} seconds total.
 - Violations: ${JSON.stringify(validation.violations)}
-Regenerate the ENTIRE JSON. Obey duration budget, per-scene max 8s, and per-scene word limits (~2.5 words per second of dialogue). Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
+Regenerate the ENTIRE JSON. Obey duration budget, per-scene durations 4–8s, and per-scene word limits (~2.5 words per second of dialogue). Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
 
       script = await callGemini(ai, systemInstruction, retryUserContent)
       script.voiceCharacterId = req.voiceCharacterId

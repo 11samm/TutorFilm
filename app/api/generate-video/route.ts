@@ -1,13 +1,20 @@
-import { GoogleGenAI } from '@google/genai'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { snapVeo31DurationSeconds } from '@/lib/veo-duration'
 import { buildVoicePrompt } from '@/lib/voice-catalog'
 import type { GenerateVideoRequest, GenerateVideoResponse } from '@/lib/types'
 
-const VIDEO_MODEL = 'veo-2.0-generate-preview'
+const VIDEO_MODEL = 'veo-3.1-generate-preview'
 const VIDEOS_BUCKET = 'videos'
+const GENAI_BASE = 'https://generativelanguage.googleapis.com'
 
-async function fetchThumbnailAsImageBytes(
+/** Same key family as Gemini; prefer GOOGLE_API_KEY when set (raw REST URLs). */
+function googleApiKey(): string | undefined {
+  return process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY
+}
+
+/** Raw base64 (no data URL prefix) for the Veo image field. */
+async function fetchThumbnailForVeo(
   thumbnailUrl: string
 ): Promise<{ imageBytes: string; mimeType: string } | null> {
   try {
@@ -27,17 +34,23 @@ async function fetchThumbnailAsImageBytes(
   }
 }
 
-function extractVideoBuffer(op: {
-  response?: {
-    generatedVideos?: Array<{ video?: { videoBytes?: string; uri?: string; mimeType?: string } }>
+/** Raw LRO from generativelanguage.googleapis.com (generateVideoResponse path). */
+function extractVideoBufferFromRawOperation(op: unknown): { buffer: Buffer; mimeType: string } | null {
+  const o = op as {
+    response?: {
+      generateVideoResponse?: {
+        generatedSamples?: Array<{
+          video?: { encodedVideo?: string; uri?: string; encoding?: string }
+        }>
+      }
+    }
   }
-}): { buffer: Buffer; mimeType: string } | null {
-  const video = op.response?.generatedVideos?.[0]?.video
+  const video = o.response?.generateVideoResponse?.generatedSamples?.[0]?.video
   if (!video) return null
-  if (video.videoBytes) {
+  if (video.encodedVideo) {
     return {
-      buffer: Buffer.from(video.videoBytes, 'base64'),
-      mimeType: video.mimeType?.trim() || 'video/mp4',
+      buffer: Buffer.from(video.encodedVideo, 'base64'),
+      mimeType: video.encoding?.trim() || 'video/mp4',
     }
   }
   if (video.uri?.startsWith('http')) {
@@ -89,9 +102,12 @@ export async function POST(request: Request) {
     characterAnglesUrl: typeof b.characterAnglesUrl === 'string' ? b.characterAnglesUrl : undefined,
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = googleApiKey()
   if (!apiKey) {
-    return NextResponse.json({ error: 'Server misconfiguration: GEMINI_API_KEY is not set' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Server misconfiguration: GOOGLE_API_KEY or GEMINI_API_KEY is not set' },
+      { status: 500 }
+    )
   }
 
   const supabase = createServerClient()
@@ -106,7 +122,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: statusErr.message }, { status: 500 })
   }
 
-  const thumb = await fetchThumbnailAsImageBytes(req.thumbnailUrl)
+  const thumb = await fetchThumbnailForVeo(req.thumbnailUrl)
   if (!thumb) {
     await supabase.from('scenes').update({ status: 'error' }).eq('id', req.sceneId)
     return NextResponse.json({ error: 'Failed to load thumbnail image' }, { status: 502 })
@@ -115,42 +131,108 @@ export async function POST(request: Request) {
   const voiceLine = buildVoicePrompt(req.voiceCharacterId, req.dialogue)
   const prompt = `${req.visualPrompt}\n\n${voiceLine}`
 
-  const clipSeconds = Math.min(8, Math.max(1, Math.round(req.durationSeconds)))
-
-  const ai = new GoogleGenAI({ apiKey })
+  const safeDuration = snapVeo31DurationSeconds(
+    Number.isFinite(req.durationSeconds) ? req.durationSeconds : 6
+  )
 
   try {
-    let operation = await ai.models.generateVideos({
-      model: VIDEO_MODEL,
-      source: {
-        prompt,
-        image: {
-          imageBytes: thumb.imageBytes,
-          mimeType: thumb.mimeType,
+    console.log('=== VEO API PAYLOAD CHECK ===')
+    console.log(
+      'Raw req duration:',
+      req.durationSeconds,
+      '| Clamped safeDuration:',
+      safeDuration
+    )
+    console.log('Sending Veo Request | Duration:', safeDuration)
+
+    /**
+     * Gemini REST `predictLongRunning` expects `instances` + `parameters` (not top-level `config`).
+     * Image uses `bytesBase64Encoded` per API (SDK maps imageBytes → this field).
+     * @see @google/genai generateVideosParametersToMldev / imageToMldev
+     */
+    const parameters = {
+      durationSeconds: safeDuration,
+      aspectRatio: "16:9",
+    }
+
+    console.log('DEBUG: Sending parameters:', JSON.stringify(parameters, null, 2))
+
+    const predictBody = {
+      instances: [
+        {
+          prompt,
+          image: {
+            bytesBase64Encoded: thumb.imageBytes,
+            mimeType: thumb.mimeType,
+          },
         },
-      },
-      config: {
-        numberOfVideos: 1,
-        aspectRatio: '16:9',
-        durationSeconds: clipSeconds,
-      },
+      ],
+      parameters,
+    }
+
+    const startUrl = `${GENAI_BASE}/v1beta/models/${VIDEO_MODEL}:predictLongRunning?key=${encodeURIComponent(apiKey)}`
+
+    const startRes = await fetch(startUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(predictBody),
     })
+
+    const startJson = (await startRes.json()) as { name?: string; error?: unknown }
+    if (!startRes.ok) {
+      console.error('generate-video: predictLongRunning failed', startRes.status, startJson)
+      const msg =
+        typeof startJson.error === 'object' && startJson.error !== null && 'message' in startJson.error
+          ? String((startJson.error as { message?: string }).message)
+          : JSON.stringify(startJson.error ?? startJson)
+      throw new Error(msg || `predictLongRunning ${startRes.status}`)
+    }
+
+    const operationName = startJson.name
+    if (!operationName) {
+      throw new Error('predictLongRunning: missing operation name')
+    }
+
+    const pollUrl = `${GENAI_BASE}/v1beta/${operationName}?key=${encodeURIComponent(apiKey)}`
 
     const maxPolls = 120
     let polls = 0
-    while (!operation.done && polls < maxPolls) {
+    let operation: unknown = null
+
+    while (polls < maxPolls) {
+      const pollRes = await fetch(pollUrl, { method: 'GET' })
+      operation = await pollRes.json()
+      if (!pollRes.ok) {
+        console.error('generate-video: poll operation failed', pollRes.status, operation)
+        throw new Error(
+          typeof operation === 'object' && operation !== null && 'error' in operation
+            ? JSON.stringify((operation as { error: unknown }).error)
+            : `poll ${pollRes.status}`
+        )
+      }
+
+      const done = (operation as { done?: boolean }).done
+      const err = (operation as { error?: { message?: string } }).error
+      if (err) {
+        throw new Error(err.message ?? JSON.stringify(err))
+      }
+      if (done) break
+
       await new Promise((r) => setTimeout(r, 5000))
-      operation = await ai.operations.getVideosOperation({ operation })
       polls += 1
     }
 
-    if (!operation.done) {
+    if (!(operation as { done?: boolean })?.done) {
       await supabase.from('scenes').update({ status: 'error' }).eq('id', req.sceneId)
       return NextResponse.json({ error: 'Video generation timed out' }, { status: 504 })
     }
 
-    let extracted = extractVideoBuffer(operation as Parameters<typeof extractVideoBuffer>[0])
-    const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri
+    let extracted = extractVideoBufferFromRawOperation(operation)
+    const videoUri = (
+      operation as {
+        response?: { generateVideoResponse?: { generatedSamples?: Array<{ video?: { uri?: string } }> } }
+      }
+    ).response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri
 
     if (!extracted && videoUri?.startsWith('http')) {
       const vidRes = await fetch(videoUri)
