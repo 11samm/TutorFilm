@@ -22,14 +22,9 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { useTutorFilmStore } from "@/lib/store"
+import { VOICE_CATALOG } from "@/lib/voice-catalog"
 
-interface RightPaneProps {
-  isGenerating: boolean
-  generationStep: number
-  isComplete: boolean
-}
-
-// Generation steps for the timeline
 const generationSteps = [
   { id: 1, label: "Script drafted", description: "AI has written the lesson script" },
   { id: 2, label: "Art style locked", description: "Visual direction confirmed" },
@@ -39,66 +34,49 @@ const generationSteps = [
   { id: 6, label: "Rendering video", description: "Final video being assembled" },
 ]
 
-// AI's decisions/choices
-const aiDecisions = [
-  { label: "Art Style", value: "Pixar 3D", icon: Palette },
-  { label: "Teacher", value: "Default Male", icon: User },
-  { label: "Voice", value: "Warm & Friendly", icon: Volume2 },
-  { label: "Pacing", value: "Gentle", icon: Zap },
-]
+function wordCountBadgeClass(wordCount: number) {
+  if (wordCount <= 18) {
+    return "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
+  }
+  if (wordCount <= 20) {
+    return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
+  }
+  return "border-red-500/40 bg-red-500/12 text-red-700 dark:text-red-400"
+}
 
-// Mock data for scenes
-const mockScenes = [
-  {
-    id: 1,
-    visualPrompt: "Wide shot of ancient Rome at sunset",
-    wordCount: 18,
-    dialogue:
-      "A long, long time ago, there was a very special place called Rome. It started as a tiny village!",
-  },
-  {
-    id: 2,
-    visualPrompt: "Animated map showing Rome expanding",
-    wordCount: 16,
-    dialogue:
-      "Rome grew and grew, like a snowball rolling down a hill, getting bigger every day!",
-  },
-  {
-    id: 3,
-    visualPrompt: "Roman soldiers marching in formation",
-    wordCount: 19,
-    dialogue:
-      "The Romans had amazing soldiers who protected everyone. They wore shiny armor and carried big shields!",
-  },
-  {
-    id: 4,
-    visualPrompt: "Colosseum with cheering crowds",
-    wordCount: 17,
-    dialogue:
-      "They built huge buildings like the Colosseum, where people watched exciting shows and games!",
-  },
-  {
-    id: 5,
-    visualPrompt: "Roman aqueduct with flowing water",
-    wordCount: 15,
-    dialogue:
-      "Romans were super smart! They built special bridges to carry water to all the people.",
-  },
-  {
-    id: 6,
-    visualPrompt: "Fade to modern Rome landmarks",
-    wordCount: 18,
-    dialogue:
-      "Even today, we can still see the amazing things the Romans built. Pretty cool, right?",
-  },
-]
-
-export function RightPane({ isGenerating, generationStep, isComplete }: RightPaneProps) {
+export function RightPane() {
   const [isPlaying, setIsPlaying] = useState(false)
+  const project = useTutorFilmStore((s) => s.project)
+
+  const isGenerating = project?.status === "scripting"
+  const generationStep = isGenerating ? 0 : project?.scenes?.length ? 1 : 0
+  const isComplete = project?.status === "complete"
+
+  const script = project?.script
+  const voiceLabel = script?.voiceCharacterId
+    ? VOICE_CATALOG[script.voiceCharacterId]?.label ?? script.voiceCharacterId
+    : project?.voiceCharacterId
+      ? VOICE_CATALOG[project.voiceCharacterId]?.label ?? project.voiceCharacterId
+      : "—"
+
+  const artStyleLabel = script?.artStyle
+    ? script.artStyle.replace(/_/g, " ")
+    : "—"
+
+  const aiDecisions = [
+    { label: "Art Style", value: artStyleLabel, icon: Palette },
+    { label: "Teacher", value: project?.avatarType?.replace(/_/g, " ") ?? "—", icon: User },
+    { label: "Voice", value: voiceLabel, icon: Volume2 },
+    { label: "Pacing", value: "Gentle", icon: Zap },
+  ]
 
   const getStepStatus = (stepIndex: number) => {
     if (isComplete) return "complete"
-    if (!isGenerating) return "pending"
+    if (!isGenerating && !project?.scenes?.length) return "pending"
+    if (!isGenerating && project?.scenes?.length) {
+      if (stepIndex === 0) return "complete"
+      return "pending"
+    }
     if (stepIndex < generationStep) return "complete"
     if (stepIndex === generationStep) return "active"
     return "pending"
@@ -106,26 +84,31 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
 
   const getStatusText = () => {
     if (isComplete) return "Ready for Review"
-    if (!isGenerating) return "Awaiting Input"
-    return generationSteps[Math.min(generationStep, generationSteps.length - 1)]?.label || "Processing..."
+    if (isGenerating) return "Writing script..."
+    if (!project?.scenes?.length) return "Awaiting Input"
+    return "Script ready"
   }
 
   const getStatusColor = () => {
     if (isComplete) return "bg-emerald-500"
-    if (!isGenerating) return "bg-muted-foreground/50"
-    return "bg-primary"
+    if (isGenerating) return "bg-primary"
+    if (project?.scenes?.length) return "bg-emerald-500"
+    return "bg-muted-foreground/50"
   }
+
+  const scenes = project?.scenes ?? []
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-br from-background via-background to-primary/[0.02]">
-      {/* Status Header */}
       <div className="flex items-center justify-between border-b border-border bg-card/30 px-5 py-3">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className={cn(
-              "h-2.5 w-2.5 rounded-full transition-colors",
-              getStatusColor()
-            )} />
+            <div
+              className={cn(
+                "h-2.5 w-2.5 rounded-full transition-colors",
+                getStatusColor()
+              )}
+            />
             {isGenerating && (
               <div className="absolute inset-0 animate-ping rounded-full bg-primary opacity-50" />
             )}
@@ -149,10 +132,8 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
         )}
       </div>
 
-      {/* Progress Timeline - Always Visible at Top */}
       <div className="border-b border-border bg-card/20 px-5 py-4">
         <div className="flex items-center gap-6">
-          {/* Compact Horizontal Timeline */}
           <div className="flex flex-1 items-center gap-1">
             {generationSteps.map((step, index) => {
               const status = getStepStatus(index)
@@ -163,7 +144,8 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                       className={cn(
                         "flex h-8 w-8 items-center justify-center rounded-full transition-all",
                         status === "complete" && "bg-primary text-primary-foreground",
-                        status === "active" && "bg-primary/20 text-primary ring-2 ring-primary ring-offset-2 ring-offset-background",
+                        status === "active" &&
+                          "bg-primary/20 text-primary ring-2 ring-primary ring-offset-2 ring-offset-background",
                         status === "pending" && "bg-secondary text-muted-foreground"
                       )}
                     >
@@ -175,7 +157,6 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                         <Circle className="h-4 w-4" />
                       )}
                     </div>
-                    {/* Tooltip */}
                     <div className="pointer-events-none absolute -bottom-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
                       {step.label}
                     </div>
@@ -193,17 +174,22 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
             })}
           </div>
 
-          {/* Overall Progress */}
           <div className="flex items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-2">
             <span className="text-xs font-medium text-muted-foreground">Progress</span>
             <span className="text-lg font-bold text-primary">
-              {isComplete ? "100" : isGenerating ? Math.round(((generationStep + 1) / generationSteps.length) * 100) : 0}%
+              {isComplete
+                ? "100"
+                : isGenerating
+                  ? Math.round(((generationStep + 1) / generationSteps.length) * 100)
+                  : project?.scenes?.length
+                    ? Math.min(100, Math.round((1 / generationSteps.length) * 100))
+                    : 0}
+              %
             </span>
           </div>
         </div>
 
-        {/* AI Decisions Row */}
-        <div className="mt-4 flex items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           {aiDecisions.map((decision) => (
             <div
               key={decision.label}
@@ -211,13 +197,14 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
             >
               <decision.icon className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs text-muted-foreground">{decision.label}:</span>
-              <span className="text-xs font-medium">{decision.value}</span>
+              <span className="max-w-[140px] truncate text-xs font-medium capitalize">
+                {decision.value}
+              </span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Tabs - Script & Final Render */}
       <Tabs defaultValue="script" className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border px-4">
           <TabsList className="h-11 w-full justify-start gap-1 bg-transparent p-0">
@@ -238,7 +225,6 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
           </TabsList>
         </div>
 
-        {/* Script & Prompts Tab */}
         <TabsContent value="script" className="mt-0 flex-1 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="flex flex-col gap-3 p-5">
@@ -247,25 +233,31 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                   Scene Breakdown
                 </h3>
                 <Badge variant="outline" className="text-xs">
-                  {mockScenes.length} scenes
+                  {scenes.length} scenes
                 </Badge>
               </div>
 
-              {mockScenes.map((scene) => (
+              {scenes.length === 0 && (
+                <p className="rounded-xl border border-dashed border-border bg-card/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                  Generate a lesson to see scenes here.
+                </p>
+              )}
+
+              {scenes.map((scene) => (
                 <div
                   key={scene.id}
                   className="group flex flex-col gap-3 rounded-xl border border-border bg-card/50 p-4 transition-colors hover:border-primary/30 hover:bg-card"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold text-primary">
-                        {scene.id}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold text-primary">
+                        {scene.order}
                       </div>
                       <span className="text-xs font-medium text-muted-foreground">
-                        Scene {scene.id}
+                        Scene {scene.order}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                       <Badge
                         variant="secondary"
                         className="gap-1 text-xs font-normal"
@@ -275,7 +267,10 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                       </Badge>
                       <Badge
                         variant="secondary"
-                        className="gap-1 text-xs font-normal"
+                        className={cn(
+                          "gap-1 border text-xs font-normal",
+                          wordCountBadgeClass(scene.wordCount)
+                        )}
                       >
                         <MessageSquare className="h-3 w-3" />
                         {scene.wordCount} words
@@ -284,9 +279,7 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                   </div>
 
                   <div className="rounded-lg bg-primary/5 p-3 ring-1 ring-primary/10">
-                    <p className="text-xs font-medium text-primary">
-                      {scene.visualPrompt}
-                    </p>
+                    <p className="text-xs font-medium text-primary">{scene.visualPrompt}</p>
                   </div>
 
                   <div className="flex items-start gap-2">
@@ -301,13 +294,12 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
           </ScrollArea>
         </TabsContent>
 
-        {/* Final Render Tab */}
         <TabsContent value="render" className="mt-0 flex-1 overflow-hidden">
           <div className="flex h-full flex-col items-center justify-center gap-6 p-6">
-            {/* Video Player */}
             <div className="relative aspect-video w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-background to-primary/5 shadow-2xl shadow-primary/10">
               <div className="absolute inset-0 flex items-center justify-center">
                 <button
+                  type="button"
                   onClick={() => setIsPlaying(!isPlaying)}
                   className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-primary/40"
                 >
@@ -319,7 +311,6 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                 </button>
               </div>
 
-              {/* Progress bar */}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/90 to-transparent p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
                   <span>0:00</span>
@@ -330,20 +321,21 @@ export function RightPane({ isGenerating, generationStep, isComplete }: RightPan
                 </div>
               </div>
 
-              {/* Fullscreen button */}
-              <button className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg bg-background/50 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-background/80 hover:text-foreground">
+              <button
+                type="button"
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg bg-background/50 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-background/80 hover:text-foreground"
+              >
                 <Maximize2 className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Video Info */}
             <div className="flex flex-col items-center gap-3">
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span>Duration: 3:24</span>
                 <span className="h-1 w-1 rounded-full bg-muted-foreground" />
                 <span>1080p HD</span>
                 <span className="h-1 w-1 rounded-full bg-muted-foreground" />
-                <span>6 Scenes</span>
+                <span>{scenes.length} Scenes</span>
               </div>
 
               <Button

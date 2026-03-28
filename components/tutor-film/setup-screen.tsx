@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import type { LessonData } from "./left-pane"
+import type { LessonData } from "@/lib/types"
 
 interface SetupScreenProps {
   onStart: (data: LessonData) => void
@@ -50,6 +50,7 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
     onStart({
       lessonPrompt,
       uploadedFile,
+      uploadedFileUrl: null,
       duration: duration[0],
     })
   }
