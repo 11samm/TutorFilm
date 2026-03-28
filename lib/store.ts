@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createBrowserClient } from '@/lib/supabase'
 import { countWords } from '@/lib/validate-script'
 import { normalizeSceneDurationSeconds } from '@/lib/veo-duration'
+import type { MockProjectStage } from '@/lib/mock-data'
 import type {
   Project,
   ProjectStage,
@@ -61,6 +62,7 @@ function parseSceneStatusFromDb(raw: unknown): Scene['status'] {
 }
 
 /** Restore pipeline stage from persisted scene rows. */
+
 /** Prevents duplicate concurrent `/api/stitch-video` runs for the same project. */
 let stitchFinalInFlightProjectId: string | null = null
 
@@ -99,6 +101,10 @@ export interface TutorFilmStore {
   project: Project | null
   setProject: (project: Project) => void
   updateScene: (sceneId: string, updates: Partial<Scene>) => void
+  addScene: () => Promise<void>
+  removeScene: (sceneId: string) => Promise<void>
+  reorderScenes: (sceneIdsInOrder: string[]) => void
+  injectMockProject: (stage: MockProjectStage) => Promise<void>
   updateProjectStatus: (status: ProjectStatus) => void
   setMusicUrl: (url: string) => void
   setAssembledScenesVideoUrl: (url: string | null) => void
@@ -151,6 +157,119 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           scenes: state.project.scenes.map((s) =>
             s.id === sceneId ? { ...s, ...updates } : s
           ),
+        },
+      }
+    }),
+
+  addScene: async () => {
+    const project = get().project
+    if (!project?.id || project.id === 'pending') return
+    const scenes = project.scenes
+    const maxOrder = scenes.length === 0 ? 0 : Math.max(...scenes.map((s) => s.order))
+    const nextOrder = maxOrder + 1
+    try {
+      const res = await fetch('/api/scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          order: nextOrder,
+          dialogue: '',
+          visualPrompt: '',
+          sceneType: 'mixed',
+          durationSeconds: 6,
+        }),
+      })
+      const json = (await res.json()) as { scene?: Scene; error?: string }
+      if (!res.ok || !json.scene) {
+        console.error('addScene failed:', json.error ?? res.status)
+        return
+      }
+      set({
+        project: {
+          ...get().project!,
+          scenes: [...get().project!.scenes, json.scene],
+        },
+      })
+    } catch (e) {
+      console.error('addScene:', e)
+    }
+  },
+
+  removeScene: async (sceneId) => {
+    const project = get().project
+    if (!project) return
+    if (project.id !== 'pending') {
+      try {
+        const res = await fetch(`/api/scenes/${sceneId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string }
+          console.error('removeScene failed:', err.error ?? res.status)
+          return
+        }
+      } catch (e) {
+        console.error('removeScene:', e)
+        return
+      }
+    }
+    set((state) => {
+      if (!state.project) return state
+      const filtered = state.project.scenes.filter((s) => s.id !== sceneId)
+      const reindexed = filtered.map((s, i) => ({ ...s, order: i + 1 }))
+      return {
+        project: {
+          ...state.project,
+          scenes: reindexed,
+        },
+      }
+    })
+  },
+
+  injectMockProject: async (stage) => {
+    try {
+      const res = await fetch('/api/dev/mock-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage }),
+      })
+      const json = (await res.json()) as {
+        project?: Project
+        lessonData?: LessonData
+        currentTab?: 'script' | 'thumbnails' | 'videos' | 'final'
+        error?: string
+      }
+      if (!res.ok || !json.project || !json.lessonData) {
+        console.error('injectMockProject:', json.error ?? res.status)
+        return
+      }
+      set({
+        hasStarted: true,
+        project: json.project,
+        lessonData: json.lessonData,
+        avatarType: json.project.avatarType,
+        voiceCharacterId: json.project.voiceCharacterId,
+        currentTab: json.currentTab ?? 'script',
+      })
+    } catch (e) {
+      console.error('injectMockProject:', e)
+    }
+  },
+
+  reorderScenes: (sceneIdsInOrder) =>
+    set((state) => {
+      if (!state.project) return state
+      if (sceneIdsInOrder.length !== state.project.scenes.length) return state
+      const map = new Map(state.project.scenes.map((s) => [s.id, s]))
+      const next: Scene[] = []
+      for (let i = 0; i < sceneIdsInOrder.length; i++) {
+        const scene = map.get(sceneIdsInOrder[i])
+        if (!scene) return state
+        next.push({ ...scene, order: i + 1 })
+      }
+      return {
+        project: {
+          ...state.project,
+          scenes: next,
         },
       }
     }),

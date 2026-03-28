@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import {
   User,
   ImageIcon,
@@ -12,14 +13,15 @@ import {
   Clapperboard,
   Loader2,
   Music,
+  X,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { useTutorFilmStore } from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
+import { ScriptApprovalSceneList } from "@/components/tutor-film/script-approval-scene-list"
 
 type AvatarChoice = "male" | "female" | "custom"
 
@@ -38,6 +40,9 @@ export function LeftPane() {
   const generateScript = useTutorFilmStore((s) => s.generateScript)
   const confirmStage = useTutorFilmStore((s) => s.confirmStage)
   const updateScene = useTutorFilmStore((s) => s.updateScene)
+  const addScene = useTutorFilmStore((s) => s.addScene)
+  const removeScene = useTutorFilmStore((s) => s.removeScene)
+  const reorderScenes = useTutorFilmStore((s) => s.reorderScenes)
   const regenerateThumbnailForScene = useTutorFilmStore(
     (s) => s.regenerateThumbnailForScene
   )
@@ -90,7 +95,21 @@ export function LeftPane() {
     isComposingMusic ||
     isMuxing
 
+  const [thumbnailLightboxUrl, setThumbnailLightboxUrl] = useState<string | null>(
+    null
+  )
+
+  useEffect(() => {
+    if (!thumbnailLightboxUrl) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setThumbnailLightboxUrl(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [thumbnailLightboxUrl])
+
   return (
+    <>
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card/30">
       <div className="shrink-0 border-b border-border bg-card/50 px-3 py-2">
         <h2 className="text-xs font-semibold tracking-wide text-foreground">
@@ -252,38 +271,13 @@ export function LeftPane() {
                   Script
                 </h3>
               </div>
-              {scenesOrdered.map((scene) => (
-                <div
-                  key={scene.id}
-                  className="rounded-lg border border-border/60 bg-background/40 p-2"
-                >
-                  <p className="mb-1.5 text-[10px] font-semibold text-foreground">
-                    Scene {scene.order}
-                  </p>
-                  <label className="mb-0.5 block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Narration
-                  </label>
-                  <Textarea
-                    value={scene.scriptHtml}
-                    onChange={(e) =>
-                      updateScene(scene.id, { scriptHtml: e.target.value })
-                    }
-                    className="mb-2 min-h-[48px] resize-y text-xs leading-snug"
-                    rows={3}
-                  />
-                  <label className="mb-0.5 block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Image prompt
-                  </label>
-                  <Textarea
-                    value={scene.thumbnailPrompt}
-                    onChange={(e) =>
-                      updateScene(scene.id, { thumbnailPrompt: e.target.value })
-                    }
-                    className="min-h-[40px] resize-y text-xs leading-snug"
-                    rows={2}
-                  />
-                </div>
-              ))}
+              <ScriptApprovalSceneList
+                scenes={scenesOrdered}
+                updateScene={updateScene}
+                addScene={addScene}
+                removeScene={removeScene}
+                reorderScenes={reorderScenes}
+              />
             </motion.section>
           )}
 
@@ -313,11 +307,18 @@ export function LeftPane() {
                         </span>
                       </div>
                     ) : scene.thumbnailUrl ? (
-                      <img
-                        src={scene.thumbnailUrl}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
+                      <button
+                        type="button"
+                        className="flex h-full w-full cursor-zoom-in items-center justify-center bg-muted/20 p-0"
+                        onClick={() => setThumbnailLightboxUrl(scene.thumbnailUrl)}
+                        aria-label="Open thumbnail full size"
+                      >
+                        <img
+                          src={scene.thumbnailUrl}
+                          alt=""
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </button>
                     ) : (
                       <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
                         No thumbnail
@@ -757,5 +758,45 @@ export function LeftPane() {
         ) : null}
       </div>
     </div>
+
+    <AnimatePresence>
+      {thumbnailLightboxUrl ? (
+        <motion.div
+          key="thumbnail-lightbox"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Thumbnail preview"
+          onClick={() => setThumbnailLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-3 top-3 z-[101] rounded-full bg-background/95 p-2 shadow-md ring-1 ring-border hover:bg-muted"
+            onClick={(e) => {
+              e.stopPropagation()
+              setThumbnailLightboxUrl(null)
+            }}
+            aria-label="Close preview"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <div
+            className="flex max-h-[90vh] max-w-full items-center justify-center px-10 pt-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={thumbnailLightboxUrl}
+              alt=""
+              className="max-h-[90vh] max-w-full object-contain"
+            />
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+    </>
   )
 }

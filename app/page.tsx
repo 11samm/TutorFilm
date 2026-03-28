@@ -5,6 +5,7 @@ import { Navbar } from "@/components/tutor-film/navbar"
 import { LeftPane } from "@/components/tutor-film/left-pane"
 import { RightPane } from "@/components/tutor-film/right-pane"
 import { SetupScreen } from "@/components/tutor-film/setup-screen"
+import { Button } from "@/components/ui/button"
 import { useTutorFilmStore } from "@/lib/store"
 import type { LessonData } from "@/lib/types"
 
@@ -14,6 +15,7 @@ export default function TutorFilmApp() {
   const setHasStarted = useTutorFilmStore((s) => s.setHasStarted)
   const project = useTutorFilmStore((s) => s.project)
   const setProject = useTutorFilmStore((s) => s.setProject)
+  const injectMockProject = useTutorFilmStore((s) => s.injectMockProject)
 
   const titleFromStore =
     project?.script?.title?.trim() ||
@@ -56,7 +58,58 @@ export default function TutorFilmApp() {
 
       {!hasStarted ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SetupScreen onStart={handleStart} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <SetupScreen onStart={handleStart} />
+          </div>
+          {process.env.NODE_ENV === "development" ? (
+            <div className="shrink-0 border-t border-dashed border-amber-500/40 bg-amber-500/[0.06] px-4 py-3">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-amber-800/90 dark:text-amber-200/90">
+                Dev tools
+              </p>
+              <p className="mb-2 text-[9px] leading-snug text-muted-foreground">
+                Inserts mock project + scenes in Supabase (no /api/generate-* calls). Use to
+                preview UI stages without spending credits.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
+                  onClick={() => void injectMockProject("script_approval")}
+                >
+                  Jump to Script (Mock)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
+                  onClick={() => void injectMockProject("thumbnail_approval")}
+                >
+                  Jump to Thumbnails (Mock)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
+                  onClick={() => void injectMockProject("video_approval")}
+                >
+                  Jump to Videos (Mock)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
+                  onClick={() => void injectMockProject("final")}
+                >
+                  Jump to Final Render (Mock)
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
