@@ -3,6 +3,8 @@
 export type AvatarType = 'none' | 'default_male' | 'default_female' | 'custom'
 export type SceneType = 'avatar_present' | 'broll' | 'mixed'
 
+export type TargetAgeBand = 'preschool' | 'kindergarten' | 'primary'
+
 export type ProjectStatus =
   | 'idle'
   | 'scripting'
@@ -55,6 +57,7 @@ export interface LessonData {
   uploadedFile: string | null // display name only (e.g. "chapter3.pdf")
   uploadedFileUrl: string | null // Supabase Storage public URL
   duration: number // target seconds (e.g. 15–60) → used to calculate scene count
+  targetAge: TargetAgeBand
 }
 
 // ─── Gemini Director Output ─────────────────────────────────────────────────
@@ -82,6 +85,9 @@ export interface GenerateScriptRequest {
   pdfUrl?: string
   avatarType: AvatarType
   voiceCharacterId: string
+  /** Audience band — drives dialogue vocabulary; distinct from scene duration. */
+  targetAge: TargetAgeBand
+  /** Used only to compute scene count; not replaced by targetAge. */
   targetDurationMinutes: number
 }
 

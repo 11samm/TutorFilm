@@ -3,11 +3,47 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 import { countWords, validateScenes } from '@/lib/validate-script'
 import type {
+  AvatarType,
   GenerateScriptRequest,
   GenerateScriptResponse,
   GeminiScriptOutput,
   Scene,
+  TargetAgeBand,
 } from '@/lib/types'
+
+const TARGET_AGE_BANDS: TargetAgeBand[] = ['preschool', 'kindergarten', 'primary']
+
+function isTargetAgeBand(x: unknown): x is TargetAgeBand {
+  return typeof x === 'string' && TARGET_AGE_BANDS.includes(x as TargetAgeBand)
+}
+
+function avatarVisualDirective(avatarType: AvatarType): string {
+  switch (avatarType) {
+    case 'none':
+      return 'B-roll and environments only (maps, props, locations, diagrams). Do not introduce a recurring on-screen teacher, mascot, or character face.'
+    case 'default_male':
+      return 'When sceneType is avatar_present or mixed, the visuals MUST show a consistent friendly male 3D Pixar-style teacher character as the on-screen presenter.'
+    case 'default_female':
+      return 'When sceneType is avatar_present or mixed, the visuals MUST show a consistent friendly female 3D Pixar-style teacher character as the on-screen presenter.'
+    case 'custom':
+      return 'When sceneType is avatar_present or mixed, the visuals MUST show a consistent custom teacher avatar derived from a selfie reference (treat as the same character across scenes).'
+    default:
+      return ''
+  }
+}
+
+function targetAgeDialogueGuidance(band: TargetAgeBand): string {
+  switch (band) {
+    case 'preschool':
+      return 'Preschool band (ages ~3–5): very simple words, concrete nouns, gentle repetition, avoid abstract jargon.'
+    case 'kindergarten':
+      return 'Kindergarten band (ages ~5–6): short clear sentences, playful but precise, light metaphors only.'
+    case 'primary':
+      return 'Primary band (ages ~7–10): richer vocabulary allowed, short analogies OK, still kid-safe and upbeat.'
+    default:
+      return ''
+  }
+}
 
 const MODEL = 'gemini-3.1-pro-preview'
 
@@ -62,15 +98,29 @@ function buildResponseSchema(targetSceneCount: number) {
   }
 }
 
-function buildSystemInstruction(targetSceneCount: number, voiceCharacterId: string): string {
-  return `You are an expert children's educational video scriptwriter for ages roughly 5–8.
+function buildSystemInstruction(targetSceneCount: number, req: GenerateScriptRequest): string {
+  const { voiceCharacterId, avatarType, targetAge } = req
+  const visualAvatarRule = avatarVisualDirective(avatarType)
+  const dialogueAgeRule = targetAgeDialogueGuidance(targetAge)
+
+  return `You are an expert children's educational video scriptwriter.
 Your output must be ONLY valid JSON matching the enforced response schema — no markdown fences, no commentary.
+
+TARGET AUDIENCE BAND: ${targetAge}
+${dialogueAgeRule}
+Tune every scene's "dialogue" vocabulary and complexity to this band.
+
+DECOUPLING (CRITICAL — DO NOT VIOLATE):
+- The "visualPrompt" MUST follow the chosen VISUAL avatar mode (avatarType = "${avatarType}"): ${visualAvatarRule}
+- The "visualPrompt" MUST feature the chosen visual avatar type (${avatarType}). NEVER describe the visual appearance based on the "voiceCharacterId". The voice character is STRICTLY for the audio track and must not influence the visual description.
+- Do NOT place fantasy creatures, animals, gnomes, mermaids, sprites, or any persona implied by voiceCharacterId ("${voiceCharacterId}") into "visualPrompt" unless the lesson topic itself requires that subject matter.
+- Never use voiceCharacterId to pick what the on-screen character looks like; visuals follow avatarType only.
 
 CRITICAL RULES:
 - Produce EXACTLY ${targetSceneCount} scenes in the "scenes" array (no more, no fewer).
 - Each scene's "dialogue" MUST contain between 18 and 20 words (inclusive). Count every word carefully before responding. Too short is acceptable; over 20 words is NEVER allowed.
-- Each "visualPrompt" must describe cinematic shots in a Pixar / Disney Junior–style 3D animation look (bright, readable, child-friendly).
-- Set "voiceCharacterId" to exactly: "${voiceCharacterId}" (do not use any other voice id).
+- Each "visualPrompt" must describe cinematic shots in a Pixar / Disney Junior–style 3D animation look (bright, readable, child-friendly) while obeying the visual avatar rules above.
+- Set "voiceCharacterId" to exactly: "${voiceCharacterId}" (do not use any other voice id). This id is for labeling narration style only.
 - "order" must run from 1 through ${targetSceneCount} in sequence without gaps or duplicates.
 - "sceneType" must be one of: avatar_present | broll | mixed — choose what fits the beat of the lesson.`
 }
@@ -78,9 +128,10 @@ CRITICAL RULES:
 function buildUserPrompt(req: GenerateScriptRequest, targetSceneCount: number): string {
   const parts: string[] = [
     `Lesson concept (plain text):\n${req.lessonPrompt}`,
+    `Target audience band (for dialogue only): ${req.targetAge}`,
     `Target approximate video length: ${req.targetDurationMinutes} minutes → you MUST output exactly ${targetSceneCount} scenes (8 seconds each).`,
-    `Avatar mode for this project: ${req.avatarType}.`,
-    `Voice character id (must appear verbatim in the JSON): ${req.voiceCharacterId}`,
+    `Visual avatar mode for this project (controls on-screen look only): ${req.avatarType}.`,
+    `Voice character id (audio / narration label only — must appear verbatim in the JSON, must NOT drive visuals): ${req.voiceCharacterId}`,
   ]
   if (req.pdfUrl) {
     parts.push(`Optional PDF context URL (for your reference only; you may not fetch it): ${req.pdfUrl}`)
@@ -136,12 +187,13 @@ export async function POST(request: Request) {
     typeof b.avatarType !== 'string' ||
     typeof b.voiceCharacterId !== 'string' ||
     typeof b.targetDurationMinutes !== 'number' ||
-    !Number.isFinite(b.targetDurationMinutes)
+    !Number.isFinite(b.targetDurationMinutes) ||
+    !isTargetAgeBand(b.targetAge)
   ) {
     return NextResponse.json(
       {
         error:
-          'Missing or invalid fields: lessonPrompt (string), avatarType, voiceCharacterId, targetDurationMinutes (number)',
+          'Missing or invalid fields: lessonPrompt (string), avatarType, voiceCharacterId, targetAge (preschool | kindergarten | primary), targetDurationMinutes (number)',
       },
       { status: 400 }
     )
@@ -152,6 +204,7 @@ export async function POST(request: Request) {
     pdfUrl: typeof b.pdfUrl === 'string' ? b.pdfUrl : undefined,
     avatarType: b.avatarType as GenerateScriptRequest['avatarType'],
     voiceCharacterId: b.voiceCharacterId,
+    targetAge: b.targetAge,
     targetDurationMinutes: b.targetDurationMinutes,
   }
 
@@ -161,7 +214,7 @@ export async function POST(request: Request) {
   }
 
   const targetSceneCount = Math.max(1, Math.ceil((req.targetDurationMinutes * 60) / 8))
-  const systemInstruction = buildSystemInstruction(targetSceneCount, req.voiceCharacterId)
+  const systemInstruction = buildSystemInstruction(targetSceneCount, req)
   const baseUserPrompt = buildUserPrompt(req, targetSceneCount)
 
   const ai = new GoogleGenAI({ apiKey })

@@ -7,6 +7,9 @@ import {
   Clock,
   Sparkles,
   ArrowRight,
+  Baby,
+  School,
+  BookOpen,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,17 +18,40 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import type { LessonData } from "@/lib/types"
+import type { LessonData, TargetAgeBand } from "@/lib/types"
 
 interface SetupScreenProps {
   onStart: (data: LessonData) => void
 }
+
+const targetAgeOptions: {
+  value: TargetAgeBand
+  label: string
+  icon: typeof Baby
+}[] = [
+  {
+    value: "preschool",
+    label: "Preschool (Ages 3–5)",
+    icon: Baby,
+  },
+  {
+    value: "kindergarten",
+    label: "Kindergarten (Ages 5–6)",
+    icon: School,
+  },
+  {
+    value: "primary",
+    label: "Primary (Ages 7–10)",
+    icon: BookOpen,
+  },
+]
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
   const [lessonPrompt, setLessonPrompt] = useState("")
   const [duration, setDuration] = useState([30])
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [targetAge, setTargetAge] = useState<TargetAgeBand | null>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -47,15 +73,18 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
   }, [])
 
   const handleStart = () => {
+    if (!targetAge) return
     onStart({
       lessonPrompt,
       uploadedFile,
       uploadedFileUrl: null,
       duration: duration[0],
+      targetAge,
     })
   }
 
-  const isValid = lessonPrompt.trim().length > 0 || uploadedFile !== null
+  const hasSource = lessonPrompt.trim().length > 0 || uploadedFile !== null
+  const isValid = hasSource && targetAge !== null
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
@@ -74,18 +103,56 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
           </div>
 
           <div className="flex flex-col gap-4">
-            {/* Lesson Concept */}
+            <div className="flex flex-col gap-2">
+              <Label className="text-xs font-medium">Target Age</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Who is this lesson for? (Required — we tailor vocabulary automatically.)
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {targetAgeOptions.map((opt) => {
+                  const Icon = opt.icon
+                  const selected = targetAge === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTargetAge(opt.value)}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-center transition-all",
+                        selected
+                          ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/20"
+                          : "border-border bg-background/50 hover:border-muted-foreground/40 hover:bg-muted/30"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-9 w-9 items-center justify-center rounded-lg",
+                          selected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-muted-foreground"
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <span className="text-[11px] font-semibold leading-snug">
+                        {opt.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium">Lesson Concept</Label>
               <Textarea
-                placeholder="e.g., Explain the Roman Empire to a 7-year-old..."
+                placeholder="e.g., Explain how the Roman Empire rose and fell"
                 value={lessonPrompt}
                 onChange={(e) => setLessonPrompt(e.target.value)}
                 className="min-h-[80px] resize-none bg-secondary/50 text-sm placeholder:text-muted-foreground/60"
               />
             </div>
 
-            {/* PDF Upload */}
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium">Or Upload Source Material</Label>
               <div
@@ -127,7 +194,6 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
               </div>
             </div>
 
-            {/* Duration Slider */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-1.5 text-xs font-medium">
@@ -154,7 +220,6 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
             </div>
           </div>
 
-          {/* Start Button - Fixed at bottom */}
           <Button
             onClick={handleStart}
             disabled={!isValid}

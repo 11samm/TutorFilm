@@ -38,12 +38,18 @@ export interface TutorFilmStore {
 
 export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
   lessonData: null,
-  setLessonData: (data) => set({ lessonData: data }),
+  setLessonData: (data) =>
+    set({
+      lessonData: {
+        ...data,
+        targetAge: data.targetAge ?? 'primary',
+      },
+    }),
 
   avatarType: 'none',
   setAvatarType: (avatarType) => set({ avatarType }),
 
-  voiceCharacterId: 'woodland_gnome_scholar',
+  voiceCharacterId: 'raspy_lumberjack',
   setVoiceCharacterId: (voiceCharacterId) => set({ voiceCharacterId }),
 
   project: null,
@@ -112,6 +118,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           lessonPrompt: lessonData.lessonPrompt,
           pdfUrl: lessonData.uploadedFileUrl ?? undefined,
           targetDurationMinutes: lessonData.duration / 60,
+          targetAge: lessonData.targetAge,
           avatarType,
           voiceCharacterId,
         }),

@@ -14,13 +14,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { useTutorFilmStore } from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
+
 type AvatarChoice = "male" | "female" | "custom"
 
-const voiceChoices = [
-  { id: "woodland_gnome_scholar" as const, label: "Warm & Friendly" },
-  { id: "sun_sprite_enthusiast" as const, label: "Energetic & Fun" },
-  { id: "ocean_mermaid_sage" as const, label: "Calm & Serious" },
-]
+const voiceEntries = Object.entries(VOICE_CATALOG) as [
+  keyof typeof VOICE_CATALOG,
+  (typeof VOICE_CATALOG)[string],
+][]
 
 export function LeftPane() {
   const lessonData = useTutorFilmStore((s) => s.lessonData)
@@ -150,7 +150,7 @@ export function LeftPane() {
 
           <div className="h-px bg-border/50" />
 
-          <section className="flex flex-col gap-4">
+          <section className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <div className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-muted-foreground">
                 <Volume2 className="h-3.5 w-3.5" />
@@ -159,22 +159,25 @@ export function LeftPane() {
                 Voice & Tone
               </h3>
             </div>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Hyper-specific vocal textures for narration (audio only — won&apos;t change your on-screen avatar).
+            </p>
 
-            <div className="flex flex-wrap gap-2">
-              {voiceChoices.map((voice) => (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {voiceEntries.map(([id, meta]) => (
                 <button
-                  key={voice.id}
+                  key={id}
                   type="button"
-                  onClick={() => setVoiceCharacterId(voice.id)}
+                  onClick={() => setVoiceCharacterId(id)}
                   className={cn(
-                    "rounded-full border px-4 py-2 text-sm font-medium transition-all",
-                    voiceCharacterId === voice.id
+                    "rounded-lg border px-3 py-2.5 text-left text-xs font-medium transition-all",
+                    voiceCharacterId === id
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
                   )}
-                  title={VOICE_CATALOG[voice.id]?.description}
+                  title={meta.description}
                 >
-                  {voice.label}
+                  {meta.label}
                 </button>
               ))}
             </div>

@@ -1,37 +1,46 @@
 export const VOICE_CATALOG: Record<string, { label: string; description: string }> = {
-  woodland_gnome_scholar: {
-    label: 'Woodland Gnome Scholar',
+  raspy_lumberjack: {
+    label: 'Raspy Lumberjack',
     description:
-      'A cheerful, lightly raspy voice of an ancient woodland gnome who has been teaching forest creatures for three centuries, speaking with warm gravitas and a small happy chuckle at the end of sentences',
+      'A deep chest voice with a dry, weathered rasp on the vowels—think cold air and pine resin—speaking at a measured, slightly slow pace with audible breaths between clauses, relaxed jaw, minimal vibrato, and consonants that land soft but clear.',
   },
-  ocean_mermaid_sage: {
-    label: 'Ocean Mermaid Sage',
+  npr_radio_host: {
+    label: 'NPR Radio Host',
     description:
-      'A smooth, resonant voice of a deep-sea mermaid scholar, speaking with a gentle lilting cadence, as if each word is carried by a slow warm current beneath the waves',
+      'Warm mid-range baritone with a polished, intimate broadcast closeness; steady pacing with gentle downward inflections at phrase ends, subtle smile in the tone, very controlled breath noise, and crisp but never shouty consonants.',
   },
-  sun_sprite_enthusiast: {
-    label: 'Sun Sprite Enthusiast',
+  hyper_gamer_streamer: {
+    label: 'Hyper Gamer Streamer',
     description:
-      'A bright, melodic voice of a tiny sun-sprite who vibrates with warm energy, speaking at a pace just slightly faster than human out of pure excited joy for sharing knowledge',
+      'Bright, slightly nasal energy with fast micro-bursts of words, upward pitch lifts on excitement, quick inhales through the nose before hype moments, occasional staccato emphasis, and a playful half-yell that never quite breaks.',
   },
-  sky_guardian_wise: {
-    label: 'Sky Guardian',
+  warm_grandmother: {
+    label: 'Warm Grandmother',
     description:
-      'A gentle, airy voice of a cloud-weaving sky guardian who has watched civilizations rise and fall, speaking with patient cosmic calm and a soft echo like wind through mountain peaks',
+      'Soft alto with pillowy, breath-forward tone and slow, reassuring rhythm; slightly airy on sibilants, gentle elongation of comforting words, quiet chuckles that sit above the breath line, and a cozy proximity like speaking beside your ear.',
   },
-  mountain_giant_soft: {
-    label: 'Mountain Giant',
+  crisp_documentary_narrator: {
+    label: 'Documentary Narrator',
     description:
-      'A warm, low-rumbling voice of a kindly mountain giant who learned to speak softly after accidentally startling too many valley villages, now permanently hushed yet full of deep vibrant warmth',
+      'Neutral, authoritative tenor with tight articulation and even spacing between phrases; dry mouth minimal, steady volume, slight forward placement in the mask, and declarative endings with no sing-song—pure PBS clarity.',
   },
-  crystal_cave_wizard: {
-    label: 'Crystal Cave Wizard',
+  soft_asmr_whisperer: {
+    label: 'Soft ASMR Whisperer',
     description:
-      'A crisp, slightly echoing voice of an ancient wizard who has lived inside a crystal cave so long that every word carries a faint harmonic resonance, always measured and mysteriously joyful',
+      'Close-mic intimacy with whisper-adjacent volume, long airy fricatives, very slow pacing, deliberate pauses, subtle lip smacks kept minimal, and a feather-light sibilance that stays consistent across sentences.',
+  },
+  upbeat_morning_show_host: {
+    label: 'Morning Show Host',
+    description:
+      'Bright, sunny head-voice forward placement with bouncy rhythm, quick friendly cadence, crisp dental consonants, infectious upward lilt on greetings, and controlled pep without shrillness—coffee-commercial optimism.',
+  },
+  gravelly_film_trailer_voice: {
+    label: 'Trailer Voice',
+    description:
+      'Low gravel with chest resonance and dramatic pauses; husky fry on low notes, slow heroic pacing, cinematic reverb-friendly tone, and punchy plosives that hit like a thud—epic but still intelligible.',
   },
 }
 
-// Veo voice prompt builder
 export function buildVoicePrompt(voiceCharacterId: string, dialogue: string): string {
   const voice = VOICE_CATALOG[voiceCharacterId]
   if (!voice) throw new Error(`Unknown voice character: ${voiceCharacterId}`)
