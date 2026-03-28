@@ -91,6 +91,8 @@ cp .env.example .env.local
 
 > Reccomended Male Template : https://png.pngtree.com/png-vector/20240628/ourmid/pngtree-friendly-israeli-man-good-looking-man-show-the-full-body-pixar-png-image_12751167.png
 
+> Reccomended Female Template : https://i.ibb.co/rC7Wfwd/Gemini-Generated-Image-frvn0lfrvn0lfrvn.png
+
 ### 3. Database
 
 Apply migrations in `supabase/migrations/` to your Supabase project (SQL editor or CLI), matching your deployment.
