@@ -23,7 +23,7 @@ interface SetupScreenProps {
 
 export function SetupScreen({ onStart }: SetupScreenProps) {
   const [lessonPrompt, setLessonPrompt] = useState("")
-  const [duration, setDuration] = useState([3])
+  const [duration, setDuration] = useState([30])
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -135,21 +135,21 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
                   Target Duration
                 </Label>
                 <Badge variant="secondary" className="px-2 py-0.5 text-xs">
-                  {duration[0]} min
+                  {duration[0]} sec
                 </Badge>
               </div>
               <Slider
                 value={duration}
                 onValueChange={setDuration}
-                min={1}
-                max={10}
+                min={15}
+                max={60}
                 step={1}
                 className="w-full"
               />
               <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>1 min</span>
-                <span>5 min</span>
-                <span>10 min</span>
+                <span>15 sec</span>
+                <span>45 sec</span>
+                <span>60 sec</span>
               </div>
             </div>
           </div>

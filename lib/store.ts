@@ -111,7 +111,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         body: JSON.stringify({
           lessonPrompt: lessonData.lessonPrompt,
           pdfUrl: lessonData.uploadedFileUrl ?? undefined,
-          targetDurationMinutes: lessonData.duration,
+          targetDurationMinutes: lessonData.duration / 60,
           avatarType,
           voiceCharacterId,
         }),

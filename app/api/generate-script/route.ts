@@ -9,7 +9,7 @@ import type {
   Scene,
 } from '@/lib/types'
 
-const MODEL = 'gemini-3.1-pro'
+const MODEL = 'gemini-3.1-pro-preview'
 
 function buildResponseSchema(targetSceneCount: number) {
   const n = String(targetSceneCount)

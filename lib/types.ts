@@ -54,7 +54,7 @@ export interface LessonData {
   lessonPrompt: string
   uploadedFile: string | null // display name only (e.g. "chapter3.pdf")
   uploadedFileUrl: string | null // Supabase Storage public URL
-  duration: number // target minutes → used to calculate scene count
+  duration: number // target seconds (e.g. 15–60) → used to calculate scene count
 }
 
 // ─── Gemini Director Output ─────────────────────────────────────────────────
