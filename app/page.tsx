@@ -1,11 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Navbar } from "@/components/tutor-film/navbar"
 import { LeftPane } from "@/components/tutor-film/left-pane"
 import { RightPane } from "@/components/tutor-film/right-pane"
 import { SetupScreen } from "@/components/tutor-film/setup-screen"
-import { Button } from "@/components/ui/button"
 import { useTutorFilmStore } from "@/lib/store"
 import type { LessonData } from "@/lib/types"
 
@@ -16,14 +15,11 @@ export default function TutorFilmApp() {
   const setHasStarted = useTutorFilmStore((s) => s.setHasStarted)
   const project = useTutorFilmStore((s) => s.project)
   const setProject = useTutorFilmStore((s) => s.setProject)
-  const generateScript = useTutorFilmStore((s) => s.generateScript)
-  const injectMockProject = useTutorFilmStore((s) => s.injectMockProject)
-
-  const scriptGenerationKickoff = useRef(false)
 
   const titleFromStore =
     project?.script?.title?.trim() ||
     project?.lessonPrompt?.trim() ||
+    lessonData?.lessonPrompt?.trim() ||
     "Untitled Project"
 
   const [projectTitle, setProjectTitle] = useState(titleFromStore)
@@ -31,15 +27,6 @@ export default function TutorFilmApp() {
   useEffect(() => {
     setProjectTitle(titleFromStore)
   }, [titleFromStore])
-
-  useEffect(() => {
-    if (!hasStarted || !lessonData || project || scriptGenerationKickoff.current) return
-    const hasSource =
-      lessonData.lessonPrompt.trim().length > 0 || lessonData.uploadedFile !== null
-    if (!hasSource) return
-    scriptGenerationKickoff.current = true
-    void generateScript()
-  }, [hasStarted, lessonData, project, generateScript])
 
   const handleProjectTitleChange = useCallback(
     (title: string) => {
@@ -74,55 +61,6 @@ export default function TutorFilmApp() {
           <div className="min-h-0 flex-1 overflow-hidden">
             <SetupScreen onStart={handleStart} />
           </div>
-          {process.env.NODE_ENV === "development" ? (
-            <div className="shrink-0 border-t border-dashed border-amber-500/40 bg-amber-500/[0.06] px-4 py-3">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-amber-800/90 dark:text-amber-200/90">
-                Dev tools
-              </p>
-              <p className="mb-2 text-[9px] leading-snug text-muted-foreground">
-                Inserts mock project + scenes in Supabase (no /api/generate-* calls). Use to
-                preview UI stages without spending credits.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
-                  onClick={() => void injectMockProject("script_approval")}
-                >
-                  Jump to Script (Mock)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
-                  onClick={() => void injectMockProject("thumbnail_approval")}
-                >
-                  Jump to Thumbnails (Mock)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
-                  onClick={() => void injectMockProject("video_approval")}
-                >
-                  Jump to Videos (Mock)
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-amber-500/30 bg-background/80 text-[10px]"
-                  onClick={() => void injectMockProject("final")}
-                >
-                  Jump to Final Render (Mock)
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">

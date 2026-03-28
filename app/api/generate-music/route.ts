@@ -87,11 +87,11 @@ export async function POST(request: Request) {
   }
 
   const prompt = [
-    'This request is ONLY for a background score — not a song, not a lead melody that competes with speech.',
-    'Generate a subtle, low-in-the-mix instrumental bed for an educational video: ambient pads, light rhythm, or soft orchestral texture that supports the lesson without drawing attention.',
-    `Mood and character: ${musicMood}.`,
-    `Approximate target length: about ${Math.round(durationSeconds)} seconds. Keep dynamics gentle — no loud peaks; the music must stay under a spoken voiceover.`,
-    'STRICTLY INSTRUMENTAL. ABSOLUTELY NO VOCALS, NO LYRICS, AND NO CHOIR. This is a subtle background score meant to sit quietly beneath a spoken voiceover. Do not include any human voices.',
+    'Generate ONLY a non-vocal instrumental underscore for a narrated educational video — not a song with verses, not a lead melody that competes with speech.',
+    'Use soft ambient pads, light electronic rhythm, gentle piano or strings, or sparse orchestral texture. Library-music / production-bed style; no featured soloist.',
+    `Mood: ${musicMood}.`,
+    `Target length about ${Math.round(durationSeconds)} seconds. Keep dynamics gentle and below a spoken voiceover — no loud peaks.`,
+    'CRITICAL: pure instrumental audio only. No singing, humming, chanting, choir, rap, beatboxing, spoken word, mumbled syllables, fake language, or any human-like vocal sounds. No vocoder or voice-like synth leads.',
   ].join(' ')
 
   const ai = new GoogleGenAI({ apiKey })
@@ -103,7 +103,9 @@ export async function POST(request: Request) {
       model,
       contents: prompt,
       config: {
-        responseModalities: ['AUDIO', 'TEXT'],
+        responseModalities: ['AUDIO'],
+        systemInstruction:
+          'You generate only instrumental underscore audio for educational video. Never output singing, speech, chanting, choir, beatboxing, or any human vocal sounds including gibberish or mumbling. Use only instruments and non-vocal synthesizers.',
       },
     })
   } catch (e) {

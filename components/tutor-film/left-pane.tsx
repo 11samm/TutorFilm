@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   User,
   ImageIcon,
@@ -10,9 +10,11 @@ import {
   RefreshCw,
   Film,
   Clapperboard,
+  Sparkles,
   Loader2,
   Music,
   X,
+  ArrowRight,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Switch } from "@/components/ui/switch"
@@ -24,13 +26,9 @@ import { ScriptApprovalSceneList } from "@/components/tutor-film/script-approval
 
 type AvatarChoice = "male" | "female" | "custom"
 
-const voiceEntries = Object.entries(VOICE_CATALOG) as [
-  keyof typeof VOICE_CATALOG,
-  (typeof VOICE_CATALOG)[string],
-][]
-
 export function LeftPane() {
   const lessonData = useTutorFilmStore((s) => s.lessonData)
+  const generateScript = useTutorFilmStore((s) => s.generateScript)
   const avatarType = useTutorFilmStore((s) => s.avatarType)
   const setAvatarType = useTutorFilmStore((s) => s.setAvatarType)
   const voiceCharacterId = useTutorFilmStore((s) => s.voiceCharacterId)
@@ -47,6 +45,7 @@ export function LeftPane() {
   const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
   const generateMusicForProject = useTutorFilmStore((s) => s.generateMusicForProject)
   const stitchFinalVideoForProject = useTutorFilmStore((s) => s.stitchFinalVideoForProject)
+  const resetToSetupScreen = useTutorFilmStore((s) => s.resetToSetupScreen)
 
   const useAnimatedTeacher = avatarType !== "none"
 
@@ -56,6 +55,20 @@ export function LeftPane() {
       : avatarType === "default_female"
         ? "female"
         : "male"
+
+  const voiceEntries = useMemo(() => {
+    const entries = Object.entries(VOICE_CATALOG) as [
+      keyof typeof VOICE_CATALOG,
+      (typeof VOICE_CATALOG)[string],
+    ][]
+    if (avatarType === "default_male") {
+      return entries.filter(([, v]) => v.gender === "male")
+    }
+    if (avatarType === "default_female") {
+      return entries.filter(([, v]) => v.gender === "female")
+    }
+    return entries
+  }, [avatarType])
 
   const avatarOptions = [
     { id: "male" as const, label: "Default Male", icon: User },
@@ -75,7 +88,9 @@ export function LeftPane() {
   const isComposingMusic = project?.status === "composing_music"
   const isMuxing = project?.status === "muxing"
 
-  const showCastAndVoice = !project || project.stage === "setup"
+  const showCastSetup = Boolean(lessonData) && !project
+  const showScriptWaiting =
+    project?.status === "scripting" && project.stage === "setup"
 
   const scenesOrdered = project
     ? [...project.scenes].sort((a, b) => a.order - b.order)
@@ -101,6 +116,14 @@ export function LeftPane() {
     return () => window.removeEventListener("keydown", onKey)
   }, [thumbnailLightboxUrl])
 
+  useEffect(() => {
+    if (voiceEntries.length === 0) return
+    const allowed = new Set(voiceEntries.map(([id]) => id as string))
+    if (!allowed.has(voiceCharacterId)) {
+      setVoiceCharacterId(voiceEntries[0][0] as string)
+    }
+  }, [voiceEntries, voiceCharacterId, setVoiceCharacterId])
+
   return (
     <>
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card/30">
@@ -116,7 +139,7 @@ export function LeftPane() {
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
         <div className="flex flex-col gap-3 p-3 pb-2">
           <AnimatePresence mode="popLayout">
-            {showCastAndVoice && (
+            {showCastSetup && (
               <motion.section
                 key="cast-setup"
                 initial={{ opacity: 1 }}
@@ -199,37 +222,73 @@ export function LeftPane() {
                   )}
                 </section>
 
-                <div className="h-px bg-border/50" />
+                {useAnimatedTeacher && (
+                  <>
+                    <div className="h-px bg-border/50" />
 
-                <section className="flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex h-5 w-5 items-center justify-center rounded bg-secondary text-muted-foreground">
-                      <Volume2 className="h-3 w-3" />
-                    </div>
-                    <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Voice
-                    </h3>
-                  </div>
+                    <section className="flex flex-col gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex h-5 w-5 items-center justify-center rounded bg-secondary text-muted-foreground">
+                          <Volume2 className="h-3 w-3" />
+                        </div>
+                        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Voice
+                        </h3>
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-1">
-                    {voiceEntries.map(([id, meta]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setVoiceCharacterId(id)}
-                        className={cn(
-                          "rounded-md border px-2 py-1.5 text-left text-[10px] font-medium leading-tight transition-all",
-                          voiceCharacterId === id
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
-                        )}
-                        title={meta.description}
-                      >
-                        {meta.label}
-                      </button>
-                    ))}
+                      <div className="grid grid-cols-2 gap-1">
+                        {voiceEntries.map(([id, meta]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => setVoiceCharacterId(id)}
+                            className={cn(
+                              "rounded-md border px-2 py-1.5 text-left text-[10px] font-medium leading-tight transition-all",
+                              voiceCharacterId === id
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-background/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+                            )}
+                            title={meta.description}
+                          >
+                            {meta.label}
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                <Button
+                  type="button"
+                  className="h-10 w-full gap-2 text-xs font-semibold"
+                  onClick={() => void generateScript()}
+                >
+                  Continue — write script
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </motion.section>
+            )}
+
+            {showScriptWaiting && (
+              <motion.section
+                key="script-waiting"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
+                className="flex flex-col gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-4"
+              >
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground">
+                      Writing your script…
+                    </p>
+                    <p className="text-[10px] leading-snug text-muted-foreground">
+                      The director is drafting scenes and dialogue. You can watch
+                      progress on the right.
+                    </p>
                   </div>
-                </section>
+                </div>
               </motion.section>
             )}
           </AnimatePresence>
@@ -556,30 +615,30 @@ export function LeftPane() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-4 text-center"
+              className="flex flex-col gap-5 rounded-lg border border-emerald-500/35 bg-gradient-to-b from-emerald-500/10 to-card/80 px-4 py-5"
             >
-              <Check className="mx-auto mb-1.5 h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-              <p className="text-xs font-semibold text-foreground">
-                Lesson finalized
-              </p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                Final video with background music is ready.
-              </p>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                See the gallery on the right — Final Render tab to play or download.
-              </p>
-              {project.finalVideoUrl ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 h-8 w-full text-[10px]"
-                  onClick={() => void generateMusicForProject()}
-                >
-                  <RefreshCw className="mr-1.5 h-3 w-3" />
-                  Regenerate music
-                </Button>
-              ) : null}
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500/20">
+                  <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
+                  <p className="text-lg font-semibold leading-tight tracking-tight text-foreground">
+                    Lesson finalized
+                  </p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    Open the <span className="font-medium text-foreground/90">Final Render</span>{" "}
+                    tab on the right to preview or download your MP4.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="h-12 w-full gap-2.5 text-sm font-semibold"
+                onClick={() => resetToSetupScreen()}
+              >
+                <Sparkles className="h-5 w-5" />
+                Start another lesson
+              </Button>
             </motion.div>
           )}
 

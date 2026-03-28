@@ -55,8 +55,41 @@ function wordCountBadgeClass(wordCount: number, maxWords: number) {
   return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
 }
 
+async function downloadVideoAsFile(url: string, filename: string): Promise<void> {
+  let blob: Blob
+  try {
+    const res = await fetch(url, { mode: "cors", credentials: "omit" })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    blob = await res.blob()
+  } catch {
+    const res = await fetch("/api/download-video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    })
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string }
+      throw new Error(j.error ?? "Download failed")
+    }
+    blob = await res.blob()
+  }
+
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = objectUrl
+  a.download = filename
+  a.rel = "noopener"
+  a.style.display = "none"
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 export function RightPane() {
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const project = useTutorFilmStore((s) => s.project)
 
   const isGenerating =
@@ -481,16 +514,46 @@ export function RightPane() {
               </div>
 
               {masterVideoUrl ? (
-                <Button
-                  size="lg"
-                  className="mt-0 gap-2 bg-primary px-8 shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25"
-                  asChild
-                >
-                  <a href={masterVideoUrl} download="tutor-film-lesson.mp4">
-                    <Download className="h-5 w-5" />
-                    Download MP4
-                  </a>
-                </Button>
+                <div className="flex w-full max-w-md flex-col items-center gap-2">
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled={isDownloading}
+                    className="mt-0 gap-2 bg-primary px-8 shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25"
+                    onClick={() => {
+                      setDownloadError(null)
+                      setIsDownloading(true)
+                      void downloadVideoAsFile(
+                        masterVideoUrl,
+                        "tutor-film-lesson.mp4"
+                      )
+                        .catch((e: unknown) => {
+                          console.error("Download failed:", e)
+                          setDownloadError(
+                            "Could not download the file. If this keeps happening, try opening the video in a new tab from the player above and save it from there."
+                          )
+                        })
+                        .finally(() => setIsDownloading(false))
+                    }}
+                  >
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Preparing download…
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-5 w-5" />
+                        Download MP4
+                      </>
+                    )}
+                  </Button>
+                  {downloadError ? (
+                    <p className="text-center text-[10px] leading-snug text-destructive">
+                      {downloadError}
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <Button
                   size="lg"

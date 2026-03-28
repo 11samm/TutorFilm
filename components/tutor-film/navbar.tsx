@@ -1,7 +1,6 @@
 "use client"
 
-import { Film, Save, Download } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Film } from "lucide-react"
 import { Input } from "@/components/ui/input"
 
 interface NavbarProps {
@@ -32,18 +31,6 @@ export function Navbar({ projectTitle, onProjectTitleChange, hasStarted }: Navba
           </>
         )}
       </div>
-      {hasStarted && (
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="gap-2">
-            <Save className="h-4 w-4" />
-            Save
-          </Button>
-          <Button size="sm" className="gap-2 bg-primary hover:bg-primary/90">
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
-        </div>
-      )}
     </header>
   )
 }

@@ -95,7 +95,7 @@ function deriveStageFromLoadedScenes(scenes: Scene[]): ProjectStage {
 export function getLessonProgressFraction(project: Project | null): number {
   if (!project) return 0
 
-  const { stage, status, scenes } = project
+  const { stage, status, scenes, musicUrl } = project
   const n = scenes.length
 
   const S = 1 / 6
@@ -141,6 +141,9 @@ export function getLessonProgressFraction(project: Project | null): number {
       return 4 * S + 0.55 * S
     }
     if (status === 'stitching') {
+      if (!musicUrl) {
+        return 4 * S + 0.5 * S
+      }
       return 5 * S + 0.2 * S
     }
     if (status === 'muxing') {
@@ -170,7 +173,7 @@ export function getLessonProgressFraction(project: Project | null): number {
 export function getLessonActiveStepIndex(project: Project | null): number {
   if (!project) return 0
 
-  const { stage, status } = project
+  const { stage, status, musicUrl } = project
 
   if (status === 'complete') return 6
 
@@ -183,7 +186,9 @@ export function getLessonActiveStepIndex(project: Project | null): number {
   if (stage === 'video_approval') return 3
 
   if (stage === 'final') {
-    if (status === 'composing_music') return 4
+    if (status === 'composing_music' || !musicUrl) {
+      return 4
+    }
     return 5
   }
 
@@ -231,6 +236,8 @@ export interface TutorFilmStore {
   setCurrentTab: (tab: TutorFilmStore['currentTab']) => void
   hasStarted: boolean
   setHasStarted: (started: boolean) => void
+  /** Clear project and return to the setup / landing flow (new lesson). */
+  resetToSetupScreen: () => void
 }
 
 export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
@@ -408,6 +415,10 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       console.warn('generateScript: lessonData is missing')
       return
     }
+
+    const existing = get().project
+    if (existing?.status === 'scripting') return
+    if (existing?.script) return
 
     const preservedCharacterAnglesUrl = get().project?.characterAnglesUrl ?? null
 
@@ -723,6 +734,14 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
 
   hasStarted: false,
   setHasStarted: (started) => set({ hasStarted: started }),
+
+  resetToSetupScreen: () =>
+    set({
+      project: null,
+      lessonData: null,
+      hasStarted: false,
+      currentTab: 'script',
+    }),
 
   generateVideoForScene: async (sceneId: string) => {
     const { project, avatarType } = get()
