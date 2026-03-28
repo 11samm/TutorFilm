@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { geminiScriptOutputSchema } from '@/lib/gemini-script-schema'
+import { normalizeSceneDurationSeconds, snapDurationsInScript } from '@/lib/veo-duration'
 import { countWords, validateDurationBudget, validateScenes } from '@/lib/validate-script'
 import type {
   AvatarType,
@@ -86,7 +88,7 @@ function buildResponseSchema() {
             durationSeconds: {
               type: Type.INTEGER,
               description:
-                'The duration of the scene in seconds. MUST be an integer between 4 and 8.',
+                'Scene length in seconds. MUST be exactly 4, 6, or 8 only — even integers in that set. No odd numbers (no 5 or 7).',
             },
             dialogue: {
               type: Type.STRING,
@@ -109,7 +111,15 @@ function buildSystemInstruction(req: GenerateScriptRequest): string {
   const visualAvatarRule = avatarVisualDirective(avatarType)
   const dialogueAgeRule = targetAgeDialogueGuidance(targetAge)
 
-  return `You are the Director. The user wants a video of exactly ${targetDurationSeconds} seconds total. You must break this down into multiple scenes. Every scene MUST be between 4 and 8 seconds long. You decide the duration of each scene to fit the pacing, but the sum of all \`durationSeconds\` MUST equal ${targetDurationSeconds}. For the dialogue, strictly follow the rule of ~2.5 words per second (e.g., a 4-second scene gets max 10 words, an 8-second scene gets max 20 words).
+  return `You are the Director. The user wants a video of exactly ${targetDurationSeconds} seconds total. You must break this down into multiple scenes.
+
+DURATION (NON-NEGOTIABLE):
+- All scene durations MUST be exactly 4, 6, or 8 seconds. No other values.
+- All scene durations MUST be even integers — use only 4, 6, or 8. No odd numbers (never 5 or 7).
+- The sum of all \`durationSeconds\` across scenes MUST equal ${targetDurationSeconds} exactly.
+- Choose per-scene lengths from {4, 6, 8} to fit pacing.
+
+For the dialogue, strictly follow ~2.5 words per second (e.g., a 4-second scene gets max 10 words, an 8-second scene gets max 20 words).
 
 Your output must be ONLY valid JSON matching the enforced response schema — no markdown fences, no commentary.
 
@@ -124,7 +134,7 @@ DECOUPLING (CRITICAL — DO NOT VIOLATE):
 - Never use voiceCharacterId to pick what the on-screen character looks like; visuals follow avatarType only.
 
 CRITICAL RULES:
-- Each scene MUST include integer "durationSeconds" between 4 and 8 inclusive.
+- Each scene's "durationSeconds" MUST be exactly 4, 6, or 8 (even seconds only — never 5 or 7).
 - The sum of every scene's "durationSeconds" MUST equal exactly ${targetDurationSeconds}.
 - Each scene's "dialogue" word count MUST NOT exceed Math.floor(durationSeconds * 2.5) words for that scene.
 - Each "visualPrompt" must describe cinematic shots in a Pixar / Disney Junior–style 3D animation look (bright, readable, child-friendly) while obeying the visual avatar rules above.
@@ -137,7 +147,7 @@ function buildUserPrompt(req: GenerateScriptRequest): string {
   const parts: string[] = [
     `Lesson concept (plain text):\n${req.lessonPrompt}`,
     `Target audience band (for dialogue only): ${req.targetAge}`,
-    `Total target video duration: ${req.targetDurationSeconds} seconds — allocate this across scenes; scene durations must sum to this total.`,
+    `Total target video duration: ${req.targetDurationSeconds} seconds — allocate across scenes using only 4, 6, or 8 seconds per scene; durations must sum to this total.`,
     `Visual avatar mode for this project (controls on-screen look only): ${req.avatarType}.`,
     `Voice character id (audio / narration label only — must appear verbatim in the JSON, must NOT drive visuals): ${req.voiceCharacterId}`,
   ]
@@ -151,11 +161,22 @@ function parseGeminiScript(text: string | undefined): GeminiScriptOutput {
   if (!text?.trim()) {
     throw new Error('Empty response from Gemini')
   }
-  const parsed = JSON.parse(text) as unknown
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text) as unknown
+  } catch {
+    throw new Error('Gemini returned invalid JSON')
+  }
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Gemini returned non-object JSON')
   }
-  return parsed as GeminiScriptOutput
+  const result = geminiScriptOutputSchema.safeParse(parsed)
+  if (!result.success) {
+    throw new Error(
+      `Script JSON failed schema validation: ${result.error.issues.map((e) => e.message).join('; ')}`
+    )
+  }
+  return result.data as GeminiScriptOutput
 }
 
 async function callGemini(
@@ -229,6 +250,7 @@ export async function POST(request: Request) {
   try {
     let script = await callGemini(ai, systemInstruction, baseUserPrompt)
     script.voiceCharacterId = req.voiceCharacterId
+    script = snapDurationsInScript(script)
 
     const budget = validateDurationBudget(script.scenes, req.targetDurationSeconds)
     let validation = validateScenes(script.scenes)
@@ -240,10 +262,11 @@ export async function POST(request: Request) {
 CORRECTION REQUIRED — your previous JSON failed validation.
 - Duration sum: got ${budget.sum}, must equal ${req.targetDurationSeconds} seconds total.
 - Violations: ${JSON.stringify(validation.violations)}
-Regenerate the ENTIRE JSON. Obey duration budget, per-scene durations 4–8s, and per-scene word limits (~2.5 words per second of dialogue). Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
+Regenerate the ENTIRE JSON. Obey duration budget: each scene's durationSeconds MUST be exactly 4, 6, or 8 (even only — no 5 or 7), and per-scene word limits (~2.5 words per second of dialogue). Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
 
       script = await callGemini(ai, systemInstruction, retryUserContent)
       script.voiceCharacterId = req.voiceCharacterId
+      script = snapDurationsInScript(script)
 
       const budget2 = validateDurationBudget(script.scenes, req.targetDurationSeconds)
       validation = validateScenes(script.scenes)
@@ -294,7 +317,7 @@ Regenerate the ENTIRE JSON. Obey duration budget, per-scene durations 4–8s, an
       word_count: countWords(s.dialogue),
       visual_prompt: s.visualPrompt,
       scene_type: s.sceneType,
-      duration_seconds: s.durationSeconds,
+      duration_seconds: normalizeSceneDurationSeconds(s.durationSeconds),
       status: 'pending' as const,
     }))
 
@@ -315,18 +338,27 @@ Regenerate the ENTIRE JSON. Obey duration budget, per-scene durations 4–8s, an
 
     sceneRows.sort((a, b) => (a.order as number) - (b.order as number))
 
-    const scenes: Scene[] = sceneRows.map((row) => ({
-      id: row.id as string,
-      order: row.order as number,
-      sceneType: row.scene_type as Scene['sceneType'],
-      dialogue: row.dialogue as string,
-      wordCount: row.word_count as number,
-      durationSeconds: (row.duration_seconds as number) ?? 8,
-      visualPrompt: row.visual_prompt as string,
-      thumbnailUrl: row.thumbnail_url as string | null,
-      videoUrl: row.video_url as string | null,
-      status: row.status as Scene['status'],
-    }))
+    const scenes: Scene[] = sceneRows.map((row) => {
+      const dialogue = row.dialogue as string
+      const visualPrompt = row.visual_prompt as string
+      return {
+        id: row.id as string,
+        order: row.order as number,
+        sceneType: row.scene_type as Scene['sceneType'],
+        dialogue,
+        wordCount: row.word_count as number,
+        durationSeconds: normalizeSceneDurationSeconds(
+          Number(row.duration_seconds ?? 8)
+        ),
+        visualPrompt,
+        thumbnailPrompt: visualPrompt,
+        scriptHtml: dialogue,
+        confirmed: false,
+        thumbnailUrl: row.thumbnail_url as string | null,
+        videoUrl: row.video_url as string | null,
+        status: row.status as Scene['status'],
+      }
+    })
 
     const payload: GenerateScriptResponse = {
       projectId,

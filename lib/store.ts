@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createBrowserClient } from '@/lib/supabase'
-import { snapVeo31DurationSeconds } from '@/lib/veo-duration'
+import { countWords } from '@/lib/validate-script'
+import { normalizeSceneDurationSeconds } from '@/lib/veo-duration'
 import type {
   Project,
   Scene,
@@ -28,6 +29,19 @@ function characterAnglesUrlForPipeline(
   return undefined
 }
 
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function enrichSceneFromApi(s: Scene): Scene {
+  return {
+    ...s,
+    confirmed: s.confirmed ?? false,
+    scriptHtml: s.scriptHtml ?? s.dialogue,
+    thumbnailPrompt: s.thumbnailPrompt ?? s.visualPrompt,
+  }
+}
+
 export interface TutorFilmStore {
   // ── Setup phase ────────────────────────────────────────────────────────────
   lessonData: LessonData | null
@@ -47,7 +61,12 @@ export interface TutorFilmStore {
   setMusicUrl: (url: string) => void
   setFinalVideoUrl: (url: string) => void
 
-  startGeneration: () => Promise<void>
+  generateScript: () => Promise<void>
+  generateThumbnailsForProject: () => Promise<void>
+  generateVideosForProject: () => Promise<void>
+  confirmStage: () => Promise<void>
+  regenerateThumbnailForScene: (sceneId: string) => Promise<void>
+
   generateVideoForScene: (sceneId: string) => Promise<void>
   loadLatestProjectFromDb: () => Promise<void>
 
@@ -108,10 +127,10 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       return { project: { ...state.project, finalVideoUrl: url } }
     }),
 
-  startGeneration: async () => {
+  generateScript: async () => {
     const { lessonData, avatarType, voiceCharacterId } = get()
     if (!lessonData) {
-      console.warn('startGeneration: lessonData is missing')
+      console.warn('generateScript: lessonData is missing')
       return
     }
 
@@ -122,6 +141,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         id: 'pending',
         sessionId: '',
         status: 'scripting',
+        stage: 'setup',
         lessonPrompt: lessonData.lessonPrompt,
         pdfUrl: lessonData.uploadedFileUrl ?? null,
         avatarType,
@@ -159,76 +179,251 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         project: {
           id: data.projectId,
           sessionId: '',
-          status: 'generating_assets',
+          status: 'idle',
+          stage: 'script_approval',
           lessonPrompt: lessonData.lessonPrompt,
           pdfUrl: lessonData.uploadedFileUrl ?? null,
           avatarType,
           voiceCharacterId,
           script: data.script,
-          scenes: data.scenes,
+          scenes: data.scenes.map(enrichSceneFromApi),
           musicUrl: null,
           finalVideoUrl: null,
           characterAnglesUrl: preservedCharacterAnglesUrl,
         },
         currentTab: 'script',
       })
+    } catch (err) {
+      console.error('generateScript:', err)
+      set({ project: null })
+    }
+  },
 
-      const characterAnglesUrlForThumbnails =
-        avatarType === 'default_male'
-          ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
-          : avatarType === 'default_female'
-            ? process.env.NEXT_PUBLIC_DEFAULT_FEMALE_ANGLES_URL
-            : avatarType === 'custom'
-              ? get().project?.characterAnglesUrl ?? undefined
-              : undefined
+  generateThumbnailsForProject: async () => {
+    const project = get().project
+    if (!project?.id || project.id === 'pending') return
+    if (!project.script) return
 
-      const scenesOrdered = [...data.scenes].sort((a, b) => a.order - b.order)
+    const characterAnglesUrlForThumbnails =
+      project.avatarType === 'default_male'
+        ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
+        : project.avatarType === 'default_female'
+          ? process.env.NEXT_PUBLIC_DEFAULT_FEMALE_ANGLES_URL
+          : project.avatarType === 'custom'
+            ? project.characterAnglesUrl ?? undefined
+            : undefined
 
-      for (const scene of scenesOrdered) {
-        try {
-          get().updateScene(scene.id, { status: 'thumbnail_generating' })
+    get().updateProjectStatus('generating_assets')
 
-          const thumbBody: Record<string, string> = {
-            sceneId: scene.id,
-            projectId: data.projectId,
-            visualPrompt: scene.visualPrompt,
-            artStyle: data.script.artStyle,
+    const scenesOrdered = [...project.scenes].sort((a, b) => a.order - b.order)
+    const maxRetries = 3
+
+    for (const scene of scenesOrdered) {
+      try {
+        const sceneNow = get().project?.scenes.find((s) => s.id === scene.id)
+        if (!sceneNow) continue
+
+        get().updateScene(scene.id, { status: 'thumbnail_generating' })
+
+        const visualPrompt = sceneNow.thumbnailPrompt?.trim() || sceneNow.visualPrompt
+
+        const thumbBody: Record<string, string> = {
+          sceneId: scene.id,
+          projectId: project.id,
+          visualPrompt,
+          artStyle: project.script.artStyle,
+        }
+        if (characterAnglesUrlForThumbnails) {
+          thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
+        }
+
+        let thumbnailSuccess = false
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const thumbRes = await fetch('/api/generate-thumbnail', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(thumbBody),
+            })
+
+            const thumbJson = (await thumbRes.json()) as {
+              thumbnailUrl?: string
+              error?: string
+            }
+
+            if (thumbRes.ok && thumbJson.thumbnailUrl) {
+              get().updateScene(scene.id, {
+                thumbnailUrl: thumbJson.thumbnailUrl,
+                status: 'thumbnail_ready',
+              })
+              thumbnailSuccess = true
+              break
+            }
+
+            console.warn(
+              'Thumbnail failed, retrying... Attempt',
+              `${attempt}/${maxRetries}`,
+              thumbJson.error ?? thumbRes.status
+            )
+          } catch (thumbErr) {
+            console.warn('Thumbnail failed, retrying... Attempt', `${attempt}/${maxRetries}`, thumbErr)
           }
-          if (characterAnglesUrlForThumbnails) {
-            thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
-          }
 
-          const thumbRes = await fetch('/api/generate-thumbnail', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(thumbBody),
+          if (!thumbnailSuccess && attempt < maxRetries) {
+            await new Promise((r) => setTimeout(r, 1000))
+          }
+        }
+
+        if (!thumbnailSuccess) {
+          console.error('generate-thumbnail failed after all retries for scene', scene.id)
+          get().updateScene(scene.id, { status: 'error' })
+        }
+      } catch (thumbErr) {
+        console.error('generate-thumbnail exception:', thumbErr)
+        get().updateScene(scene.id, { status: 'error' })
+      }
+    }
+
+    get().updateProjectStatus('idle')
+  },
+
+  generateVideosForProject: async () => {
+    const project = get().project
+    if (!project?.id) return
+
+    get().updateProjectStatus('generating_videos')
+
+    const ordered = [...project.scenes].sort((a, b) => a.order - b.order)
+    for (const scene of ordered) {
+      const fresh = get().project?.scenes.find((s) => s.id === scene.id)
+      if (!fresh?.thumbnailUrl) continue
+      await get().generateVideoForScene(scene.id)
+    }
+
+    get().updateProjectStatus('idle')
+  },
+
+  confirmStage: async () => {
+    const project = get().project
+    if (!project) return
+
+    switch (project.stage) {
+      case 'script_approval': {
+        set((state) => {
+          if (!state.project) return state
+          const nextScenes = state.project.scenes.map((s) => {
+            const dialogue = stripHtml(s.scriptHtml).trim() || s.dialogue
+            const vp = (s.thumbnailPrompt?.trim() || s.visualPrompt).trim()
+            return {
+              ...s,
+              dialogue,
+              visualPrompt: vp,
+              thumbnailPrompt: vp,
+              wordCount: countWords(dialogue),
+              confirmed: true,
+            }
           })
-
-          const thumbJson = (await thumbRes.json()) as {
-            thumbnailUrl?: string
-            error?: string
+          return {
+            project: {
+              ...state.project,
+              stage: 'thumbnail_approval',
+              scenes: nextScenes,
+            },
           }
+        })
+        await get().generateThumbnailsForProject()
+        break
+      }
+      case 'thumbnail_approval': {
+        set({ project: { ...get().project!, stage: 'video_approval' } })
+        await get().generateVideosForProject()
+        break
+      }
+      case 'video_approval': {
+        set({
+          project: {
+            ...get().project!,
+            stage: 'final',
+            status: 'complete',
+          },
+        })
+        break
+      }
+      default:
+        break
+    }
+  },
 
-          if (!thumbRes.ok || !thumbJson.thumbnailUrl) {
-            console.error('generate-thumbnail failed:', thumbJson.error ?? thumbRes.status)
-            get().updateScene(scene.id, { status: 'error' })
-            continue
-          }
+  regenerateThumbnailForScene: async (sceneId: string) => {
+    const project = get().project
+    if (!project?.script || !project.id || project.id === 'pending') return
+    const scene = project.scenes.find((s) => s.id === sceneId)
+    if (!scene) return
 
-          get().updateScene(scene.id, {
+    const characterAnglesUrlForThumbnails =
+      project.avatarType === 'default_male'
+        ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
+        : project.avatarType === 'default_female'
+          ? process.env.NEXT_PUBLIC_DEFAULT_FEMALE_ANGLES_URL
+          : project.avatarType === 'custom'
+            ? project.characterAnglesUrl ?? undefined
+            : undefined
+
+    const visualPrompt = scene.thumbnailPrompt?.trim() || scene.visualPrompt
+
+    get().updateScene(sceneId, { status: 'thumbnail_generating' })
+
+    const maxRetries = 3
+    let thumbnailSuccess = false
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const thumbBody: Record<string, string> = {
+          sceneId,
+          projectId: project.id,
+          visualPrompt,
+          artStyle: project.script.artStyle,
+        }
+        if (characterAnglesUrlForThumbnails) {
+          thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
+        }
+
+        const thumbRes = await fetch('/api/generate-thumbnail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(thumbBody),
+        })
+
+        const thumbJson = (await thumbRes.json()) as {
+          thumbnailUrl?: string
+          error?: string
+        }
+
+        if (thumbRes.ok && thumbJson.thumbnailUrl) {
+          get().updateScene(sceneId, {
             thumbnailUrl: thumbJson.thumbnailUrl,
             status: 'thumbnail_ready',
           })
-        } catch (thumbErr) {
-          console.error('generate-thumbnail exception:', thumbErr)
-          get().updateScene(scene.id, { status: 'error' })
+          thumbnailSuccess = true
+          break
         }
+
+        console.warn(
+          'Regenerate thumbnail failed, retrying...',
+          `${attempt}/${maxRetries}`,
+          thumbJson.error ?? thumbRes.status
+        )
+      } catch (e) {
+        console.warn('Regenerate thumbnail failed, retrying...', `${attempt}/${maxRetries}`, e)
       }
 
-      get().updateProjectStatus('idle')
-    } catch (err) {
-      console.error('startGeneration:', err)
-      set({ project: null })
+      if (!thumbnailSuccess && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+    }
+
+    if (!thumbnailSuccess) {
+      get().updateScene(sceneId, { status: 'error' })
     }
   },
 
@@ -256,7 +451,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         visualPrompt: scene.visualPrompt,
         dialogue: scene.dialogue,
         voiceCharacterId: project.voiceCharacterId,
-        durationSeconds: snapVeo31DurationSeconds(Number(scene.durationSeconds) || 6),
+        durationSeconds: normalizeSceneDurationSeconds(Number(scene.durationSeconds) || 6),
       }
       if (angles) {
         videoBody.characterAnglesUrl = angles
@@ -279,7 +474,6 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         return
       }
 
-      // Step 4/5: mirror API (Supabase `video_url` + `video_ready`) so the right pane updates without waiting on Realtime.
       get().updateScene(sceneId, {
         videoUrl: videoJson.videoUrl,
         status: 'video_ready',
@@ -324,19 +518,27 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
 
     const rawScenes = r.scenes ?? []
     const scenesMapped: Scene[] = rawScenes
-      .map((s) => ({
-        id: String(s.id),
-        order: Number(s.order),
-        sceneType: s.scene_type as Scene['sceneType'],
-        dialogue: String(s.dialogue),
-        wordCount: Number(s.word_count),
-        durationSeconds: Number(s.duration_seconds ?? 8),
-        visualPrompt: String(s.visual_prompt),
-        thumbnailUrl: (s.thumbnail_url as string | null) ?? null,
-        // Dev reload: ignore stale DB statuses / prior videos so each scene can be re-run in the UI.
-        videoUrl: null,
-        status: 'thumbnail_ready' as Scene['status'],
-      }))
+      .map((s) => {
+        const dialogue = String(s.dialogue)
+        const visualPrompt = String(s.visual_prompt)
+        return {
+          id: String(s.id),
+          order: Number(s.order),
+          sceneType: s.scene_type as Scene['sceneType'],
+          dialogue,
+          wordCount: Number(s.word_count),
+          durationSeconds: normalizeSceneDurationSeconds(
+            Number(s.duration_seconds ?? 8)
+          ),
+          visualPrompt,
+          thumbnailPrompt: visualPrompt,
+          scriptHtml: dialogue,
+          confirmed: true,
+          thumbnailUrl: (s.thumbnail_url as string | null) ?? null,
+          videoUrl: null,
+          status: 'thumbnail_ready' as Scene['status'],
+        }
+      })
       .sort((a, b) => a.order - b.order)
 
     const script = (r.script_json ?? null) as GeminiScriptOutput | null
@@ -346,8 +548,8 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     const project: Project = {
       id: r.id,
       sessionId: r.session_id,
-      // DB may still say scripting/generating_* from a failed run; treat loaded project as idle for UI.
       status: 'idle',
+      stage: 'thumbnail_approval',
       lessonPrompt: r.lesson_prompt ?? '',
       pdfUrl: r.pdf_url,
       avatarType: r.avatar_type as AvatarType,

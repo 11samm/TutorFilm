@@ -7,10 +7,14 @@ import {
   Check,
   Volume2,
   Sparkles,
+  RefreshCw,
+  Film,
+  Clapperboard,
 } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { useTutorFilmStore } from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
@@ -29,7 +33,13 @@ export function LeftPane() {
   const voiceCharacterId = useTutorFilmStore((s) => s.voiceCharacterId)
   const setVoiceCharacterId = useTutorFilmStore((s) => s.setVoiceCharacterId)
   const project = useTutorFilmStore((s) => s.project)
-  const startGeneration = useTutorFilmStore((s) => s.startGeneration)
+  const generateScript = useTutorFilmStore((s) => s.generateScript)
+  const confirmStage = useTutorFilmStore((s) => s.confirmStage)
+  const updateScene = useTutorFilmStore((s) => s.updateScene)
+  const regenerateThumbnailForScene = useTutorFilmStore(
+    (s) => s.regenerateThumbnailForScene
+  )
+  const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
 
   const useAnimatedTeacher = avatarType !== "none"
 
@@ -56,159 +66,450 @@ export function LeftPane() {
     (lessonData.lessonPrompt.trim().length > 0 || lessonData.uploadedFile)
 
   const isScripting = project?.status === "scripting"
+  const isGeneratingAssets = project?.status === "generating_assets"
+  const isGeneratingVideos = project?.status === "generating_videos"
+
+  const showCastAndVoice =
+    !project || (project.stage === "setup" && project.status !== "scripting")
+
+  const scenesOrdered = project
+    ? [...project.scenes].sort((a, b) => a.order - b.order)
+    : []
+
+  const busyPipeline = isGeneratingAssets || isGeneratingVideos
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden border-r border-border bg-card/30">
-      <div className="border-b border-border bg-card/50 px-5 py-4">
-        <h2 className="text-sm font-semibold tracking-wide text-foreground">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card/30">
+      <div className="shrink-0 border-b border-border bg-card/50 px-3 py-2">
+        <h2 className="text-xs font-semibold tracking-wide text-foreground">
           Director&apos;s Desk
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Choose your cast & style
+        <p className="text-[10px] leading-tight text-muted-foreground">
+          Draft → approve → gallery
         </p>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-6 p-5">
-          <section className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                <User className="h-3.5 w-3.5" />
-              </div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Cast & Crew
-              </h3>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/50 p-4">
-              <div className="flex items-center gap-3">
-                <Video className="h-4 w-4 text-muted-foreground" />
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    {useAnimatedTeacher ? "Animated Teacher" : "Narrated B-Roll"}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {useAnimatedTeacher
-                      ? "3D avatar presents the lesson"
-                      : "Voiceover with stock footage"}
-                  </span>
-                </div>
-              </div>
-              <Switch
-                checked={useAnimatedTeacher}
-                onCheckedChange={(checked) => {
-                  if (checked) setAvatarType("default_male")
-                  else setAvatarType("none")
-                }}
-              />
-            </div>
-
-            {useAnimatedTeacher && (
-              <div className="grid gap-2">
-                {avatarOptions.map((avatar) => (
-                  <button
-                    key={avatar.id}
-                    type="button"
-                    onClick={() => {
-                      if (avatar.id === "male") setAvatarType("default_male")
-                      else if (avatar.id === "female") setAvatarType("default_female")
-                      else setAvatarType("custom")
-                    }}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-3 text-left transition-all",
-                      selectedAvatar === avatar.id
-                        ? "border-primary/50 bg-primary/5"
-                        : "border-border/50 bg-background/50 hover:border-muted-foreground/30"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-                        selectedAvatar === avatar.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-muted-foreground"
-                      )}
-                    >
-                      <avatar.icon className="h-5 w-5" />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+        <div className="flex flex-col gap-3 p-3 pb-2">
+          <AnimatePresence mode="popLayout">
+            {showCastAndVoice && (
+              <motion.section
+                key="cast-setup"
+                initial={{ opacity: 1 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
+                className="flex flex-col gap-3"
+              >
+                <section className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-secondary text-muted-foreground">
+                      <User className="h-3 w-3" />
                     </div>
-                    <div className="flex flex-1 flex-col">
-                      <span className="text-sm font-medium">{avatar.label}</span>
-                      {avatar.subtitle && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {avatar.subtitle}
+                    <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Cast
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border border-border/50 bg-background/50 px-2.5 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Video className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <span className="block truncate text-xs font-medium">
+                          {useAnimatedTeacher ? "Animated Teacher" : "Narrated B-Roll"}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    {selectedAvatar === avatar.id && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
+                    <Switch
+                      className="scale-90"
+                      checked={useAnimatedTeacher}
+                      onCheckedChange={(checked) => {
+                        if (checked) setAvatarType("default_male")
+                        else setAvatarType("none")
+                      }}
+                    />
+                  </div>
 
-          <div className="h-px bg-border/50" />
-
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                <Volume2 className="h-3.5 w-3.5" />
-              </div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Voice & Tone
-              </h3>
-            </div>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Hyper-specific vocal textures for narration (audio only — won&apos;t change your on-screen avatar).
-            </p>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {voiceEntries.map(([id, meta]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setVoiceCharacterId(id)}
-                  className={cn(
-                    "rounded-lg border px-3 py-2.5 text-left text-xs font-medium transition-all",
-                    voiceCharacterId === id
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+                  {useAnimatedTeacher && (
+                    <div className="grid gap-1.5">
+                      {avatarOptions.map((avatar) => (
+                        <button
+                          key={avatar.id}
+                          type="button"
+                          onClick={() => {
+                            if (avatar.id === "male") setAvatarType("default_male")
+                            else if (avatar.id === "female")
+                              setAvatarType("default_female")
+                            else setAvatarType("custom")
+                          }}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition-all",
+                            selectedAvatar === avatar.id
+                              ? "border-primary/50 bg-primary/5"
+                              : "border-border/50 bg-background/50 hover:border-muted-foreground/30"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+                              selectedAvatar === avatar.id
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-secondary text-muted-foreground"
+                            )}
+                          >
+                            <avatar.icon className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium">{avatar.label}</span>
+                            {avatar.subtitle && (
+                              <span className="block truncate text-[10px] text-muted-foreground">
+                                {avatar.subtitle}
+                              </span>
+                            )}
+                          </div>
+                          {selectedAvatar === avatar.id && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   )}
-                  title={meta.description}
-                >
-                  {meta.label}
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      </ScrollArea>
+                </section>
 
-      <div className="border-t border-border bg-card/50 p-5">
-        <Button
-          type="button"
-          onClick={() => void startGeneration()}
-          disabled={isScripting || !canGenerate}
-          className={cn(
-            "h-14 w-full gap-2 text-base font-semibold transition-all",
-            canGenerate &&
-              !isScripting &&
-              "bg-primary shadow-lg shadow-primary/25 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/30"
+                <div className="h-px bg-border/50" />
+
+                <section className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-secondary text-muted-foreground">
+                      <Volume2 className="h-3 w-3" />
+                    </div>
+                    <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Voice
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1">
+                    {voiceEntries.map(([id, meta]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setVoiceCharacterId(id)}
+                        className={cn(
+                          "rounded-md border px-2 py-1.5 text-left text-[10px] font-medium leading-tight transition-all",
+                          voiceCharacterId === id
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background/50 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+                        )}
+                        title={meta.description}
+                      >
+                        {meta.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </motion.section>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {isScripting && project && (
+              <motion.div
+                key="scripting-wait"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card/40 px-3 py-6"
+              >
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                <p className="text-center text-xs font-medium text-foreground">
+                  Writing your lesson…
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {project?.stage === "script_approval" && !isScripting && (
+            <motion.section
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
+              className="flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <Clapperboard className="h-3.5 w-3.5 text-muted-foreground" />
+                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Script
+                </h3>
+              </div>
+              {scenesOrdered.map((scene) => (
+                <div
+                  key={scene.id}
+                  className="rounded-lg border border-border/60 bg-background/40 p-2"
+                >
+                  <p className="mb-1.5 text-[10px] font-semibold text-foreground">
+                    Scene {scene.order}
+                  </p>
+                  <label className="mb-0.5 block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Narration
+                  </label>
+                  <Textarea
+                    value={scene.scriptHtml}
+                    onChange={(e) =>
+                      updateScene(scene.id, { scriptHtml: e.target.value })
+                    }
+                    className="mb-2 min-h-[48px] resize-y text-xs leading-snug"
+                    rows={3}
+                  />
+                  <label className="mb-0.5 block text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Image prompt
+                  </label>
+                  <Textarea
+                    value={scene.thumbnailPrompt}
+                    onChange={(e) =>
+                      updateScene(scene.id, { thumbnailPrompt: e.target.value })
+                    }
+                    className="min-h-[40px] resize-y text-xs leading-snug"
+                    rows={2}
+                  />
+                </div>
+              ))}
+            </motion.section>
           )}
-        >
-          {isScripting ? (
+
+          {project?.stage === "thumbnail_approval" && (
+            <motion.section
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Thumbnails
+                </h3>
+              </div>
+              {scenesOrdered.map((scene) => (
+                <div
+                  key={scene.id}
+                  className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
+                >
+                  <div className="relative h-24 w-full bg-muted/30 sm:h-28">
+                    {scene.status === "thumbnail_generating" ? (
+                      <div className="flex h-full flex-col items-center justify-center gap-1">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                        <span className="text-[10px] text-muted-foreground">
+                          Generating…
+                        </span>
+                      </div>
+                    ) : scene.thumbnailUrl ? (
+                      <img
+                        src={scene.thumbnailUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                        No thumbnail
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Scene {scene.order}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-[10px]"
+                      disabled={
+                        scene.status === "thumbnail_generating" || busyPipeline
+                      }
+                      onClick={() => void regenerateThumbnailForScene(scene.id)}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Redo
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </motion.section>
+          )}
+
+          {project?.stage === "video_approval" && (
+            <motion.section
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <Film className="h-3.5 w-3.5 text-muted-foreground" />
+                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Videos
+                </h3>
+              </div>
+              {scenesOrdered.map((scene) => (
+                <div
+                  key={scene.id}
+                  className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
+                >
+                  <div className="relative h-28 w-full bg-black/80 sm:h-32">
+                    {scene.status === "video_generating" ? (
+                      <div className="flex h-full flex-col items-center justify-center gap-1">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                        <span className="text-[10px] text-muted-foreground">
+                          Animating…
+                        </span>
+                      </div>
+                    ) : scene.videoUrl ? (
+                      <video
+                        src={scene.videoUrl}
+                        className="h-full w-full object-cover"
+                        controls
+                        playsInline
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                        No video
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      Scene {scene.order}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-[10px]"
+                      disabled={
+                        !scene.thumbnailUrl ||
+                        scene.status === "video_generating" ||
+                        busyPipeline
+                      }
+                      onClick={() => void generateVideoForScene(scene.id)}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Redo
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </motion.section>
+          )}
+
+          {project?.stage === "final" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-4 text-center"
+            >
+              <Check className="mx-auto mb-1.5 h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+              <p className="text-xs font-semibold text-foreground">
+                Lesson finalized
+              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                See the gallery on the right.
+              </p>
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-border bg-card/50 p-2.5">
+        {isScripting && project ? (
+          <Button
+            type="button"
+            disabled
+            className="h-9 w-full gap-1.5 text-xs font-semibold"
+          >
             <span className="flex items-center gap-2">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
-              Director is writing...
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+              Writing…
             </span>
-          ) : (
-            <>
-              <Sparkles className="h-5 w-5" />
-              Generate Lesson
-            </>
-          )}
-        </Button>
+          </Button>
+        ) : null}
+
+        {!isScripting && !project ? (
+          <Button
+            type="button"
+            onClick={() => void generateScript()}
+            disabled={!canGenerate}
+            className={cn(
+              "h-9 w-full gap-1.5 text-xs font-semibold",
+              canGenerate &&
+                "bg-primary shadow-md shadow-primary/20 hover:bg-primary/90"
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Generate Lesson
+          </Button>
+        ) : null}
+
+        {!isScripting && project?.stage === "script_approval" ? (
+          <Button
+            type="button"
+            onClick={() => void confirmStage()}
+            disabled={busyPipeline || scenesOrdered.length === 0}
+            className="h-9 w-full gap-1.5 text-xs font-semibold"
+          >
+            {isGeneratingAssets ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+                Images…
+              </>
+            ) : (
+              <>
+                <ImageIcon className="h-3.5 w-3.5" />
+                Confirm &amp; generate images
+              </>
+            )}
+          </Button>
+        ) : null}
+
+        {!isScripting && project?.stage === "thumbnail_approval" ? (
+          <Button
+            type="button"
+            onClick={() => void confirmStage()}
+            disabled={
+              busyPipeline ||
+              scenesOrdered.some(
+                (s) => s.status === "thumbnail_generating" || !s.thumbnailUrl
+              )
+            }
+            className="h-9 w-full gap-1.5 text-xs font-semibold"
+          >
+            <Film className="h-3.5 w-3.5" />
+            Confirm &amp; animate videos
+          </Button>
+        ) : null}
+
+        {!isScripting && project?.stage === "video_approval" ? (
+          <Button
+            type="button"
+            onClick={() => void confirmStage()}
+            disabled={
+              busyPipeline ||
+              isGeneratingVideos ||
+              scenesOrdered.some(
+                (s) => s.status === "video_generating" || !s.videoUrl
+              )
+            }
+            className="h-9 w-full gap-1.5 text-xs font-semibold"
+          >
+            {isGeneratingVideos ? (
+              <>
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+                Videos…
+              </>
+            ) : (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Finalize lesson
+              </>
+            )}
+          </Button>
+        ) : null}
       </div>
     </div>
   )

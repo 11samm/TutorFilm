@@ -24,6 +24,14 @@ export type SceneStatus =
   | 'complete'
   | 'error'
 
+/** Multi-stage approval pipeline (drafting table → gallery). */
+export type ProjectStage =
+  | 'setup'
+  | 'script_approval'
+  | 'thumbnail_approval'
+  | 'video_approval'
+  | 'final'
+
 // ─── Core Domain Types ──────────────────────────────────────────────────────
 
 export interface Scene {
@@ -35,6 +43,12 @@ export interface Scene {
   /** Scene clip length in seconds (≤8). Drives proportional dialogue cap. */
   durationSeconds: number
   visualPrompt: string
+  /** Editable thumbnail / keyframe prompt (defaults to visualPrompt). */
+  thumbnailPrompt: string
+  /** Editable narration/script (HTML or plain text; synced to dialogue on confirm). */
+  scriptHtml: string
+  /** When true, scene appears in the right-hand gallery. */
+  confirmed: boolean
   thumbnailUrl: string | null
   videoUrl: string | null
   status: SceneStatus
@@ -44,6 +58,8 @@ export interface Project {
   id: string
   sessionId: string
   status: ProjectStatus
+  /** Controls left-pane drafting vs approval steps. */
+  stage: ProjectStage
   lessonPrompt: string
   pdfUrl: string | null
   avatarType: AvatarType

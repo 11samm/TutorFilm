@@ -32,14 +32,16 @@ export default function TutorFilmApp() {
       />
 
       {!hasStarted ? (
-        <SetupScreen onStart={handleStart} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SetupScreen onStart={handleStart} />
+        </div>
       ) : (
-        <div className="flex flex-1 overflow-hidden">
-          <div className="w-[40%] min-w-[360px]">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex h-full min-h-0 w-[38%] min-w-[280px] max-w-[440px] shrink-0 flex-col border-r border-border/40">
             <LeftPane />
           </div>
 
-          <div className="w-[60%] flex-1">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
             <RightPane />
           </div>
         </div>

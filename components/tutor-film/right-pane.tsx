@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   FileText,
   Play,
@@ -53,11 +54,27 @@ function wordCountBadgeClass(wordCount: number, maxWords: number) {
 export function RightPane() {
   const [isPlaying, setIsPlaying] = useState(false)
   const project = useTutorFilmStore((s) => s.project)
-  const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
 
-  const isGenerating = project?.status === "scripting"
-  const generationStep = isGenerating ? 0 : project?.scenes?.length ? 1 : 0
+  const isGenerating =
+    project?.status === "scripting" ||
+    project?.status === "generating_assets" ||
+    project?.status === "generating_videos"
   const isComplete = project?.status === "complete"
+
+  const scenes = project?.scenes ?? []
+  const galleryScenes = scenes.filter((s) => s.confirmed)
+
+  const generationStep = isGenerating
+    ? project?.status === "scripting"
+      ? 0
+      : project?.status === "generating_assets"
+        ? 1
+        : project?.status === "generating_videos"
+          ? 2
+          : 0
+    : galleryScenes.length
+      ? 1
+      : 0
 
   const script = project?.script
   const voiceLabel = script?.voiceCharacterId
@@ -79,8 +96,8 @@ export function RightPane() {
 
   const getStepStatus = (stepIndex: number) => {
     if (isComplete) return "complete"
-    if (!isGenerating && !project?.scenes?.length) return "pending"
-    if (!isGenerating && project?.scenes?.length) {
+    if (!isGenerating && !galleryScenes.length) return "pending"
+    if (!isGenerating && galleryScenes.length) {
       if (stepIndex === 0) return "complete"
       return "pending"
     }
@@ -91,22 +108,22 @@ export function RightPane() {
 
   const getStatusText = () => {
     if (isComplete) return "Ready for Review"
-    if (isGenerating) return "Writing script..."
-    if (!project?.scenes?.length) return "Awaiting Input"
-    return "Script ready"
+    if (project?.status === "scripting") return "Writing script..."
+    if (project?.status === "generating_assets") return "Generating keyframes..."
+    if (project?.status === "generating_videos") return "Animating scenes..."
+    if (!galleryScenes.length) return "Awaiting confirmation"
+    return "Gallery"
   }
 
   const getStatusColor = () => {
     if (isComplete) return "bg-emerald-500"
     if (isGenerating) return "bg-primary"
-    if (project?.scenes?.length) return "bg-emerald-500"
+    if (galleryScenes.length) return "bg-emerald-500"
     return "bg-muted-foreground/50"
   }
 
-  const scenes = project?.scenes ?? []
-
   return (
-    <div className="flex h-full flex-col bg-gradient-to-br from-background via-background to-primary/[0.02]">
+    <div className="flex h-full min-h-0 flex-col bg-gradient-to-br from-background via-background to-primary/[0.02]">
       <div className="flex items-center justify-between border-b border-border bg-card/30 px-5 py-3">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -188,7 +205,7 @@ export function RightPane() {
                 ? "100"
                 : isGenerating
                   ? Math.round(((generationStep + 1) / generationSteps.length) * 100)
-                  : project?.scenes?.length
+                  : galleryScenes.length
                     ? Math.min(100, Math.round((1 / generationSteps.length) * 100))
                     : 0}
               %
@@ -240,21 +257,31 @@ export function RightPane() {
                   Scene Breakdown
                 </h3>
                 <Badge variant="outline" className="text-xs">
-                  {scenes.length} scenes
+                  {galleryScenes.length} scenes
                 </Badge>
               </div>
 
-              {scenes.length === 0 && (
+              {galleryScenes.length === 0 && (
                 <p className="rounded-xl border border-dashed border-border bg-card/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                  Generate a lesson to see scenes here.
+                  Confirm script on the left to add scenes to the gallery.
                 </p>
               )}
 
-              {scenes.map((scene) => (
-                <div
-                  key={scene.id}
-                  className="group rounded-xl border border-border bg-card/50 p-4 transition-colors hover:border-primary/30 hover:bg-card"
-                >
+              <AnimatePresence mode="popLayout">
+                {galleryScenes.map((scene) => (
+                  <motion.div
+                    key={scene.id}
+                    layout
+                    initial={{ opacity: 0, x: -28, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 380,
+                      damping: 32,
+                      mass: 0.85,
+                    }}
+                    className="group rounded-xl border border-border bg-card/50 p-4 transition-colors hover:border-primary/30 hover:bg-card"
+                  >
                   <div className="flex flex-col gap-3 md:flex-row md:gap-4 md:items-stretch">
                     <div className="relative w-full shrink-0 md:w-[min(100%,320px)] md:max-w-[40%]">
                       <div
@@ -290,19 +317,6 @@ export function RightPane() {
                               className="relative z-0 h-full w-full object-cover"
                               loading="lazy"
                             />
-                            {scene.status === "thumbnail_ready" && !scene.videoUrl ? (
-                              <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center pb-4">
-                                <Button
-                                  type="button"
-                                  size="lg"
-                                  className="pointer-events-auto gap-2 border-2 border-primary-foreground/30 bg-primary font-semibold text-primary-foreground shadow-xl shadow-primary/40 ring-2 ring-background/90 hover:bg-primary/95"
-                                  onClick={() => void generateVideoForScene(scene.id)}
-                                >
-                                  <span aria-hidden>🎬</span>
-                                  Generate Video
-                                </Button>
-                              </div>
-                            ) : null}
                             {scene.status === "video_generating" && (
                               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-background/65 p-4 backdrop-blur-[2px]">
                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -378,8 +392,9 @@ export function RightPane() {
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </ScrollArea>
         </TabsContent>
@@ -425,7 +440,7 @@ export function RightPane() {
                 <span className="h-1 w-1 rounded-full bg-muted-foreground" />
                 <span>1080p HD</span>
                 <span className="h-1 w-1 rounded-full bg-muted-foreground" />
-                <span>{scenes.length} Scenes</span>
+                <span>{galleryScenes.length} Scenes</span>
               </div>
 
               <Button

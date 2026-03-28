@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { snapVeo31DurationSeconds } from '@/lib/veo-duration'
+import { normalizeSceneDurationSeconds } from '@/lib/veo-duration'
 import { buildVoicePrompt } from '@/lib/voice-catalog'
 import type { GenerateVideoRequest, GenerateVideoResponse } from '@/lib/types'
 
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
   const voiceLine = buildVoicePrompt(req.voiceCharacterId, req.dialogue)
   const prompt = `${req.visualPrompt}\n\n${voiceLine}`
 
-  const safeDuration = snapVeo31DurationSeconds(
+  const safeDuration = normalizeSceneDurationSeconds(
     Number.isFinite(req.durationSeconds) ? req.durationSeconds : 6
   )
 
