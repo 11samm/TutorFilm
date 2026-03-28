@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Navbar } from "@/components/tutor-film/navbar"
 import { LeftPane } from "@/components/tutor-film/left-pane"
 import { RightPane } from "@/components/tutor-film/right-pane"
@@ -11,11 +11,15 @@ import type { LessonData } from "@/lib/types"
 
 export default function TutorFilmApp() {
   const hasStarted = useTutorFilmStore((s) => s.hasStarted)
+  const lessonData = useTutorFilmStore((s) => s.lessonData)
   const setLessonData = useTutorFilmStore((s) => s.setLessonData)
   const setHasStarted = useTutorFilmStore((s) => s.setHasStarted)
   const project = useTutorFilmStore((s) => s.project)
   const setProject = useTutorFilmStore((s) => s.setProject)
+  const generateScript = useTutorFilmStore((s) => s.generateScript)
   const injectMockProject = useTutorFilmStore((s) => s.injectMockProject)
+
+  const scriptGenerationKickoff = useRef(false)
 
   const titleFromStore =
     project?.script?.title?.trim() ||
@@ -27,6 +31,15 @@ export default function TutorFilmApp() {
   useEffect(() => {
     setProjectTitle(titleFromStore)
   }, [titleFromStore])
+
+  useEffect(() => {
+    if (!hasStarted || !lessonData || project || scriptGenerationKickoff.current) return
+    const hasSource =
+      lessonData.lessonPrompt.trim().length > 0 || lessonData.uploadedFile !== null
+    if (!hasSource) return
+    scriptGenerationKickoff.current = true
+    void generateScript()
+  }, [hasStarted, lessonData, project, generateScript])
 
   const handleProjectTitleChange = useCallback(
     (title: string) => {

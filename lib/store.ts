@@ -90,7 +90,7 @@ function deriveStageFromLoadedScenes(scenes: Scene[]): ProjectStage {
  * Continuous lesson progress 0–1 for the right-pane rail (6 steps). Combines `stage`,
  * `status`, and per-scene thumbnail/video completion so every phase moves the bar.
  *
- * Segments: Script | Avatar and Voice | Thumbnails | Animations | Music Score | Final Render
+ * Segments: Avatar and Voice | Script | Thumbnails | Animations | Music Score | Final Render
  */
 export function getLessonProgressFraction(project: Project | null): number {
   if (!project) return 0
@@ -111,14 +111,14 @@ export function getLessonProgressFraction(project: Project | null): number {
     if (status === 'idle') {
       const hasScript = Boolean(project.script)
       if (n === 0 && hasScript) {
-        return 0.55 * S
+        return S + 0.55 * S
       }
       if (n > 0 && hasScript) {
         return S + 0.55 * S
       }
-      return 0.35 * S
+      return S + 0.35 * S
     }
-    return 0.5 * S
+    return S + 0.5 * S
   }
 
   if (stage === 'thumbnail_approval') {
@@ -160,6 +160,34 @@ export function getLessonProgressFraction(project: Project | null): number {
   if (stage === 'setup') return 0.12 * S
 
   return 0.15 * S
+}
+
+/**
+ * Discrete active step index (0–5) for the 6-step lesson rail. Used for step circles
+ * and connectors so the current stage never shows as “complete” until you leave it.
+ * Returns 6 when the lesson is fully complete (all circles checkmarks).
+ */
+export function getLessonActiveStepIndex(project: Project | null): number {
+  if (!project) return 0
+
+  const { stage, status } = project
+
+  if (status === 'complete') return 6
+
+  if (status === 'scripting' || stage === 'setup') return 0
+
+  if (stage === 'script_approval') return 1
+
+  if (stage === 'thumbnail_approval') return 2
+
+  if (stage === 'video_approval') return 3
+
+  if (stage === 'final') {
+    if (status === 'composing_music') return 4
+    return 5
+  }
+
+  return 0
 }
 
 export interface TutorFilmStore {

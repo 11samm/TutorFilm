@@ -25,13 +25,17 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { getLessonProgressFraction, useTutorFilmStore } from "@/lib/store"
+import {
+  getLessonActiveStepIndex,
+  getLessonProgressFraction,
+  useTutorFilmStore,
+} from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
 import { maxWordsForScene } from "@/lib/validate-script"
 
 const LESSON_STEPS = [
-  "Script",
   "Avatar and Voice",
+  "Script",
   "Thumbnails",
   "Animations",
   "Music Score",
@@ -76,6 +80,7 @@ export function RightPane() {
 
   const progressFraction = getLessonProgressFraction(project)
   const progressPercent = Math.min(100, Math.round(progressFraction * 100))
+  const activeStepIndex = getLessonActiveStepIndex(project)
 
   const script = project?.script
   const voiceLabel = script?.voiceCharacterId
@@ -97,10 +102,9 @@ export function RightPane() {
 
   const getLessonStepCircleStatus = (index: number) => {
     const n = LESSON_STEPS.length
-    const f = progressFraction
-    if (f >= 1) return "complete" as const
-    if (f >= (index + 1) / n) return "complete" as const
-    if (f >= index / n && f < (index + 1) / n) return "active" as const
+    if (activeStepIndex >= n) return "complete" as const
+    if (index < activeStepIndex) return "complete" as const
+    if (index === activeStepIndex) return "active" as const
     return "pending" as const
   }
 
@@ -197,9 +201,7 @@ export function RightPane() {
                       <div
                         className={cn(
                           "mx-0.5 h-0.5 min-w-[8px] flex-1 transition-colors",
-                          progressFraction >= (index + 1) / LESSON_STEPS.length
-                            ? "bg-primary"
-                            : "bg-border"
+                          activeStepIndex > index ? "bg-primary" : "bg-border"
                         )}
                       />
                     )}
@@ -469,10 +471,10 @@ export function RightPane() {
             <div className="flex max-w-xl flex-col items-center gap-3 text-center">
               <p className="text-[11px] text-muted-foreground">
                 {project?.finalVideoUrl
-                  ? "Final export with music (Lyria) when available."
+                  ? "Your finished lesson video is ready — download it below."
                   : project?.assembledScenesVideoUrl
                     ? "Scene clips combined — Lyria score and final mux will follow."
-                    : "Finalize the lesson to assemble scene clips and unlock the player."}
+                    : "Approve scene videos on the left to stitch clips, then we add the music score and final mix."}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
                 <span>{galleryScenes.length} Scenes</span>

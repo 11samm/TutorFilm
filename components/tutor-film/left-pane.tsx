@@ -7,7 +7,6 @@ import {
   Video,
   Check,
   Volume2,
-  Sparkles,
   RefreshCw,
   Film,
   Clapperboard,
@@ -37,7 +36,6 @@ export function LeftPane() {
   const voiceCharacterId = useTutorFilmStore((s) => s.voiceCharacterId)
   const setVoiceCharacterId = useTutorFilmStore((s) => s.setVoiceCharacterId)
   const project = useTutorFilmStore((s) => s.project)
-  const generateScript = useTutorFilmStore((s) => s.generateScript)
   const confirmStage = useTutorFilmStore((s) => s.confirmStage)
   const updateScene = useTutorFilmStore((s) => s.updateScene)
   const addScene = useTutorFilmStore((s) => s.addScene)
@@ -70,10 +68,6 @@ export function LeftPane() {
     },
   ]
 
-  const canGenerate =
-    !!lessonData &&
-    (lessonData.lessonPrompt.trim().length > 0 || lessonData.uploadedFile)
-
   const isScripting = project?.status === "scripting"
   const isGeneratingAssets = project?.status === "generating_assets"
   const isGeneratingVideos = project?.status === "generating_videos"
@@ -81,8 +75,7 @@ export function LeftPane() {
   const isComposingMusic = project?.status === "composing_music"
   const isMuxing = project?.status === "muxing"
 
-  const showCastAndVoice =
-    !project || (project.stage === "setup" && project.status !== "scripting")
+  const showCastAndVoice = !project || project.stage === "setup"
 
   const scenesOrdered = project
     ? [...project.scenes].sort((a, b) => a.order - b.order)
@@ -241,23 +234,6 @@ export function LeftPane() {
             )}
           </AnimatePresence>
 
-          <AnimatePresence>
-            {isScripting && project && (
-              <motion.div
-                key="scripting-wait"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-card/40 px-3 py-6"
-              >
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                <p className="text-center text-xs font-medium text-foreground">
-                  Writing your lesson…
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {project?.stage === "script_approval" && !isScripting && (
             <motion.section
               initial={{ opacity: 0, y: 6 }}
@@ -327,21 +303,20 @@ export function LeftPane() {
                       )}
                     </div>
                   </div>
-                  <div className="flex min-w-[5.5rem] flex-[1] flex-col justify-center gap-2 border-l border-border/50 px-2.5 py-2 sm:min-w-[6.5rem] sm:px-3">
-                    <p className="text-xs font-semibold leading-tight text-foreground">
+                  <div className="flex min-w-[7.5rem] flex-[1] flex-col justify-center gap-2.5 border-l border-border/50 px-3 py-3 sm:min-w-[9rem]">
+                    <p className="text-sm font-semibold leading-tight text-foreground">
                       Scene {scene.order}
                     </p>
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
-                      className="h-8 w-full shrink-0 gap-1 px-2 text-[10px] sm:w-auto sm:self-start"
+                      className="h-10 w-full shrink-0 gap-2 px-3 text-sm font-medium"
                       disabled={
                         scene.status === "thumbnail_generating" || busyPipeline
                       }
                       onClick={() => void regenerateThumbnailForScene(scene.id)}
                     >
-                      <RefreshCw className="h-3 w-3" />
+                      <RefreshCw className="h-4 w-4" />
                       Redo
                     </Button>
                   </div>
@@ -359,39 +334,49 @@ export function LeftPane() {
               <div className="flex items-center gap-1.5">
                 <Film className="h-3.5 w-3.5 text-muted-foreground" />
                 <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Videos
+                  Animations
                 </h3>
               </div>
-              {scenesOrdered.map((scene) =>
-                scene.status === "error" ? (
+              {scenesOrdered.map((scene) => {
+                const videoReady =
+                  Boolean(scene.videoUrl) && scene.status !== "video_generating"
+
+                return scene.status === "error" ? (
                   <div
                     key={scene.id}
-                    className="overflow-hidden rounded-lg border-2 border-destructive/60 bg-destructive/5"
+                    className="flex min-h-0 flex-row overflow-hidden rounded-lg border-2 border-destructive/60 bg-destructive/5"
                   >
-                    <div className="flex flex-col gap-2 px-3 py-3 sm:py-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-destructive">
-                          Scene {scene.order}
-                        </span>
+                    <div className="min-w-0 flex-[3]">
+                      <div className="relative aspect-video w-full bg-muted/30">
+                        {scene.thumbnailUrl ? (
+                          <img
+                            src={scene.thumbnailUrl}
+                            alt=""
+                            className="h-full w-full object-cover opacity-50"
+                          />
+                        ) : null}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-destructive/10 p-3 text-center">
+                          <p className="text-xs font-medium text-destructive">
+                            Generation failed
+                          </p>
+                          <p className="text-[10px] leading-snug text-muted-foreground">
+                            Video did not complete. Check connection and API limits, then
+                            retry.
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs font-medium text-destructive">
-                        Generation Failed
-                      </p>
-                      <p className="text-[10px] leading-snug text-muted-foreground">
-                        Video generation did not complete. Check your connection and API
-                        limits, then retry.
+                    </div>
+                    <div className="flex min-w-[7.5rem] flex-[1] flex-col justify-center gap-2.5 border-l border-destructive/30 px-3 py-3 sm:min-w-[9rem]">
+                      <p className="text-sm font-semibold leading-tight text-destructive">
+                        Scene {scene.order}
                       </p>
                       <Button
                         type="button"
-                        size="sm"
-                        className="h-9 w-full gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        disabled={
-                          !scene.thumbnailUrl ||
-                          busyPipeline
-                        }
+                        className="h-10 w-full shrink-0 gap-2 bg-destructive px-3 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
+                        disabled={!scene.thumbnailUrl || busyPipeline}
                         onClick={() => void generateVideoForScene(scene.id)}
                       >
-                        <RefreshCw className="h-3.5 w-3.5" />
+                        <RefreshCw className="h-4 w-4" />
                         Retry
                       </Button>
                     </div>
@@ -399,38 +384,63 @@ export function LeftPane() {
                 ) : (
                   <div
                     key={scene.id}
-                    className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
+                    className="flex min-h-0 flex-row overflow-hidden rounded-lg border border-border/60 bg-background/40"
                   >
-                    <div className="relative h-28 w-full bg-black/80 sm:h-32">
-                      {scene.status === "video_generating" ? (
-                        <div className="flex h-full flex-col items-center justify-center gap-1">
-                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                          <span className="text-[10px] text-muted-foreground">
-                            Animating…
-                          </span>
-                        </div>
-                      ) : scene.videoUrl ? (
-                        <video
-                          src={scene.videoUrl}
-                          className="h-full w-full object-cover"
-                          controls
-                          playsInline
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
-                          No video
-                        </div>
-                      )}
+                    <div className="min-w-0 flex-[3]">
+                      <div className="relative aspect-video w-full bg-black/80">
+                        {scene.status === "video_generating" ? (
+                          <>
+                            {scene.thumbnailUrl ? (
+                              <img
+                                src={scene.thumbnailUrl}
+                                alt=""
+                                className="absolute inset-0 h-full w-full object-cover opacity-40"
+                              />
+                            ) : null}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-background/40">
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                              <span className="text-[10px] text-muted-foreground">
+                                Animating…
+                              </span>
+                            </div>
+                          </>
+                        ) : videoReady ? (
+                          <video
+                            key={scene.videoUrl}
+                            src={scene.videoUrl!}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            controls
+                            playsInline
+                            preload="metadata"
+                          />
+                        ) : scene.thumbnailUrl ? (
+                          <button
+                            type="button"
+                            className="absolute inset-0 flex cursor-zoom-in items-center justify-center overflow-hidden bg-muted/20 p-0"
+                            onClick={() => setThumbnailLightboxUrl(scene.thumbnailUrl)}
+                            aria-label="Open keyframe full size"
+                          >
+                            <img
+                              src={scene.thumbnailUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                            No keyframe
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
-                      <span className="text-[10px] font-medium text-muted-foreground">
+                    <div className="flex min-w-[7.5rem] flex-[1] flex-col justify-center gap-2.5 border-l border-border/50 px-3 py-3 sm:min-w-[9rem]">
+                      <p className="text-sm font-semibold leading-tight text-foreground">
                         Scene {scene.order}
-                      </span>
+                      </p>
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
-                        className="h-7 gap-1 px-2 text-[10px]"
+                        className="h-10 w-full shrink-0 gap-2 px-3 text-sm font-medium"
                         disabled={
                           !scene.thumbnailUrl ||
                           scene.status === "video_generating" ||
@@ -438,106 +448,100 @@ export function LeftPane() {
                         }
                         onClick={() => void generateVideoForScene(scene.id)}
                       >
-                        <RefreshCw className="h-3 w-3" />
+                        <RefreshCw className="h-4 w-4" />
                         Redo
                       </Button>
                     </div>
                   </div>
                 )
-              )}
+              })}
             </motion.section>
           )}
 
-          {project?.stage === "final" && project.status === "stitching" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-4 text-center"
-            >
-              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-amber-600 dark:text-amber-400" />
-              <p className="text-xs font-semibold text-foreground">
-                Assembling lesson video…
-              </p>
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                Scene clips are concatenated in order. Background music runs in parallel; then
-                the final export is mixed on the server.
-              </p>
-              <div className="mt-3 flex items-center justify-center gap-2 rounded-md border border-amber-500/20 bg-background/60 px-2 py-1.5 text-[10px] text-muted-foreground">
-                <Music className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span className="text-left leading-snug">
-                  <span className="font-medium text-foreground">Background music</span>
-                  {project.musicUrl ? (
-                    <span className="ml-1.5 inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-3 w-3" />
-                      Ready
-                    </span>
-                  ) : (
-                    <span className="ml-1.5 inline-flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Generating…
-                    </span>
-                  )}
-                </span>
-              </div>
-            </motion.div>
-          )}
-
           {project?.stage === "final" &&
-            project.status === "composing_music" &&
-            project.assembledScenesVideoUrl && (
+            project.status !== "complete" &&
+            project.status !== "error" && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-3"
               >
                 <p className="text-center text-xs font-semibold text-foreground">
-                  Scene assembly ready — composing music…
+                  {project.status === "stitching" && !project.assembledScenesVideoUrl
+                    ? "Assembling scene clips…"
+                    : project.status === "composing_music"
+                      ? "Scene clips ready — composing music…"
+                      : project.status === "muxing"
+                        ? "Mixing dialogue and music…"
+                        : project.status === "final_preview"
+                          ? "Preview — video & music bed"
+                          : "Assembly & music"}
                 </p>
-                <video
-                  src={project.assembledScenesVideoUrl}
-                  className="aspect-video w-full rounded-md border border-border bg-black/40 object-contain"
-                  controls
-                  playsInline
-                />
-                <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
-                  Lyria background track
-                </div>
-              </motion.div>
-            )}
-
-          {project?.stage === "final" &&
-            project.assembledScenesVideoUrl &&
-            project.musicUrl &&
-            !project.finalVideoUrl &&
-            (project.status === "final_preview" || project.status === "muxing") && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="space-y-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-3"
-              >
-                <p className="text-center text-xs font-semibold text-foreground">
-                  Preview — video &amp; music bed
-                </p>
-                <p className="text-center text-[10px] leading-snug text-muted-foreground">
-                  Watch and listen below. When you are happy with the track, confirm to mix the
-                  final export (dialogue + ducked music).
-                </p>
-                <video
-                  src={project.assembledScenesVideoUrl}
-                  className="aspect-video w-full rounded-md border border-border bg-black/40 object-contain"
-                  controls
-                  playsInline
-                />
-                <div className="rounded-md border border-border/60 bg-card/80 px-2 py-1.5">
-                  <p className="mb-1 text-[10px] font-medium text-muted-foreground">
-                    Background music
-                  </p>
-                  <audio
-                    src={project.musicUrl}
+                {project.assembledScenesVideoUrl ? (
+                  <video
+                    src={project.assembledScenesVideoUrl}
+                    className="aspect-video w-full rounded-md border border-border bg-black/40 object-contain"
                     controls
-                    className="h-8 w-full"
+                    playsInline
                   />
+                ) : (
+                  <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-md border border-border/60 bg-muted/25">
+                    <Loader2 className="h-7 w-7 animate-spin text-amber-600 dark:text-amber-400" />
+                    <span className="text-[10px] text-muted-foreground">
+                      Building stitched preview…
+                    </span>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2 rounded-md border border-amber-500/20 bg-background/60 px-2.5 py-2 text-[10px] text-muted-foreground">
+                  <div className="flex items-start gap-2">
+                    <Music className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="leading-snug">
+                      {project.status === "composing_music" ? (
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-amber-600" />
+                          Generating Lyria background track…
+                        </span>
+                      ) : project.musicUrl ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <Check className="h-3 w-3" />
+                          Music bed ready — use the player below to audition.
+                        </span>
+                      ) : (
+                        <span>
+                          After the clip preview appears above, we&apos;ll generate the Lyria
+                          background track next.
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {project.musicUrl &&
+                  project.assembledScenesVideoUrl &&
+                  (project.status === "final_preview" || project.status === "muxing") ? (
+                    <div className="rounded-md border border-border/60 bg-card/80 px-2 py-1.5">
+                      <p className="mb-1 text-[10px] font-medium text-muted-foreground">
+                        Background music
+                      </p>
+                      <audio
+                        src={project.musicUrl}
+                        controls
+                        className="h-8 w-full"
+                      />
+                    </div>
+                  ) : null}
+                  {project.musicUrl &&
+                  project.assembledScenesVideoUrl &&
+                  project.status === "final_preview" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-full text-[10px]"
+                      onClick={() => void generateMusicForProject()}
+                    >
+                      <RefreshCw className="mr-1.5 h-3 w-3" />
+                      Regenerate music
+                    </Button>
+                  ) : null}
                 </div>
                 {project.status === "muxing" ? (
                   <p className="flex items-center justify-center gap-2 text-center text-[10px] text-muted-foreground">
@@ -545,28 +549,6 @@ export function LeftPane() {
                     Mixing final export (music ducked under dialogue)…
                   </p>
                 ) : null}
-                {project.status === "final_preview" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 w-full text-[10px] font-semibold"
-                    onClick={() => void stitchFinalVideoForProject()}
-                  >
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                    Confirm &amp; export final video
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-full text-[10px]"
-                  disabled={project.status === "muxing"}
-                  onClick={() => void generateMusicForProject()}
-                >
-                  <RefreshCw className="mr-1.5 h-3 w-3" />
-                  Regenerate music
-                </Button>
               </motion.div>
             )}
 
@@ -619,35 +601,6 @@ export function LeftPane() {
       </div>
 
       <div className="shrink-0 border-t border-border bg-card/50 p-2.5">
-        {isScripting && project ? (
-          <Button
-            type="button"
-            disabled
-            className="h-9 w-full gap-1.5 text-xs font-semibold"
-          >
-            <span className="flex items-center gap-2">
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
-              Writing…
-            </span>
-          </Button>
-        ) : null}
-
-        {!isScripting && !project ? (
-          <Button
-            type="button"
-            onClick={() => void generateScript()}
-            disabled={!canGenerate}
-            className={cn(
-              "h-9 w-full gap-1.5 text-xs font-semibold",
-              canGenerate &&
-                "bg-primary shadow-md shadow-primary/20 hover:bg-primary/90"
-            )}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Generate Lesson
-          </Button>
-        ) : null}
-
         {!isScripting && project?.stage === "script_approval" ? (
           <Button
             type="button"
@@ -710,7 +663,7 @@ export function LeftPane() {
             ) : (
               <>
                 <Check className="h-3.5 w-3.5" />
-                Finalize lesson
+                Continue to assembly &amp; music
               </>
             )}
           </Button>
