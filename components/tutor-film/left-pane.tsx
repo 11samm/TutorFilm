@@ -42,6 +42,7 @@ export function LeftPane() {
     (s) => s.regenerateThumbnailForScene
   )
   const generateVideoForScene = useTutorFilmStore((s) => s.generateVideoForScene)
+  const generateMusicForProject = useTutorFilmStore((s) => s.generateMusicForProject)
 
   const useAnimatedTeacher = avatarType !== "none"
 
@@ -71,6 +72,8 @@ export function LeftPane() {
   const isGeneratingAssets = project?.status === "generating_assets"
   const isGeneratingVideos = project?.status === "generating_videos"
   const isStitching = project?.status === "stitching"
+  const isComposingMusic = project?.status === "composing_music"
+  const isMuxing = project?.status === "muxing"
 
   const showCastAndVoice =
     !project || (project.stage === "setup" && project.status !== "scripting")
@@ -80,7 +83,11 @@ export function LeftPane() {
     : []
 
   const busyPipeline =
-    isGeneratingAssets || isGeneratingVideos || isStitching
+    isGeneratingAssets ||
+    isGeneratingVideos ||
+    isStitching ||
+    isComposingMusic ||
+    isMuxing
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card/30">
@@ -448,8 +455,8 @@ export function LeftPane() {
                 Assembling lesson video…
               </p>
               <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                Scene clips are concatenated in order. This master will be sent to Lyria for
-                the score, then mixed into the final export.
+                Scene clips are concatenated in order. Background music runs in parallel; then
+                the final export is mixed on the server.
               </p>
               <div className="mt-3 flex items-center justify-center gap-2 rounded-md border border-amber-500/20 bg-background/60 px-2 py-1.5 text-[10px] text-muted-foreground">
                 <Music className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -471,6 +478,82 @@ export function LeftPane() {
             </motion.div>
           )}
 
+          {project?.stage === "final" &&
+            project.status === "composing_music" &&
+            project.assembledScenesVideoUrl && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-3"
+              >
+                <p className="text-center text-xs font-semibold text-foreground">
+                  Scene assembly ready — composing music…
+                </p>
+                <video
+                  src={project.assembledScenesVideoUrl}
+                  className="aspect-video w-full rounded-md border border-border bg-black/40 object-contain"
+                  controls
+                  playsInline
+                />
+                <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+                  Lyria background track
+                </div>
+              </motion.div>
+            )}
+
+          {project?.stage === "final" &&
+            project.assembledScenesVideoUrl &&
+            project.musicUrl &&
+            !project.finalVideoUrl && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-3"
+              >
+                <p className="text-center text-xs font-semibold text-foreground">
+                  Preview — assembled video &amp; music bed
+                </p>
+                <video
+                  src={project.assembledScenesVideoUrl}
+                  className="aspect-video w-full rounded-md border border-border bg-black/40 object-contain"
+                  controls
+                  playsInline
+                />
+                <div className="rounded-md border border-border/60 bg-card/80 px-2 py-1.5">
+                  <p className="mb-1 text-[10px] font-medium text-muted-foreground">
+                    Background music
+                  </p>
+                  <audio
+                    src={project.musicUrl}
+                    controls
+                    className="h-8 w-full"
+                  />
+                </div>
+                {project.status === "muxing" ? (
+                  <p className="flex items-center justify-center gap-2 text-center text-[10px] text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Mixing final export (music ducked under dialogue)…
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-full text-[10px]"
+                  disabled={
+                    project.status === "muxing" ||
+                    project.status === "stitching" ||
+                    project.status === "composing_music"
+                  }
+                  onClick={() => void generateMusicForProject()}
+                >
+                  <RefreshCw className="mr-1.5 h-3 w-3" />
+                  Regenerate music
+                </Button>
+              </motion.div>
+            )}
+
           {project?.stage === "final" && project.status === "complete" && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -482,11 +565,23 @@ export function LeftPane() {
                 Lesson finalized
               </p>
               <p className="mt-0.5 text-[10px] text-muted-foreground">
-                Combined scene video is ready. Lyria scoring and final mux come next.
+                Final video with background music is ready.
               </p>
               <p className="mt-1 text-[10px] text-muted-foreground">
-                See the gallery on the right — Final Render tab for the assembled clip.
+                See the gallery on the right — Final Render tab to play or download.
               </p>
+              {project.finalVideoUrl ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-8 w-full text-[10px]"
+                  onClick={() => void generateMusicForProject()}
+                >
+                  <RefreshCw className="mr-1.5 h-3 w-3" />
+                  Regenerate music &amp; remix
+                </Button>
+              ) : null}
             </motion.div>
           )}
 
@@ -583,6 +678,8 @@ export function LeftPane() {
               busyPipeline ||
               isGeneratingVideos ||
               isStitching ||
+              isComposingMusic ||
+              isMuxing ||
               scenesOrdered.some(
                 (s) => s.status === "video_generating" || !s.videoUrl
               )
@@ -603,14 +700,22 @@ export function LeftPane() {
           </Button>
         ) : null}
 
-        {!isScripting && project?.stage === "final" && project.status === "stitching" ? (
+        {!isScripting &&
+        project?.stage === "final" &&
+        (project.status === "stitching" ||
+          project.status === "composing_music" ||
+          project.status === "muxing") ? (
           <Button
             type="button"
             disabled
             className="h-9 w-full gap-1.5 text-xs font-semibold opacity-90"
           >
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Assembling video…
+            {project.status === "muxing"
+              ? "Mixing final video…"
+              : project.status === "composing_music"
+                ? "Composing music…"
+                : "Assembling video…"}
           </Button>
         ) : null}
       </div>

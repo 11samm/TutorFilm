@@ -12,6 +12,7 @@ export type ProjectStatus =
   | 'generating_videos'
   | 'composing_music'
   | 'stitching'
+  | 'muxing'
   | 'complete'
   | 'error'
 
@@ -148,7 +149,7 @@ export interface GenerateVideoResponse {
 
 export interface StitchVideoRequest {
   projectId: string
-  sceneVideoUrls: string[]
+  assembledScenesVideoUrl: string
   musicUrl: string
 }
 

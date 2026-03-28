@@ -61,6 +61,9 @@ function parseSceneStatusFromDb(raw: unknown): Scene['status'] {
 }
 
 /** Restore pipeline stage from persisted scene rows. */
+/** Prevents duplicate concurrent `/api/stitch-video` runs for the same project. */
+let stitchFinalInFlightProjectId: string | null = null
+
 function deriveStageFromLoadedScenes(scenes: Scene[]): ProjectStage {
   if (scenes.length === 0) return 'script_approval'
   const allHaveThumb = scenes.every((s) => s.thumbnailUrl)
@@ -110,6 +113,7 @@ export interface TutorFilmStore {
   generateVideoForScene: (sceneId: string) => Promise<void>
   stitchSceneVideosForProject: () => Promise<void>
   generateMusicForProject: () => Promise<void>
+  stitchFinalVideoForProject: () => Promise<void>
   loadLatestProjectFromDb: () => Promise<void>
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -562,8 +566,56 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         return
       }
       get().setMusicUrl(json.musicUrl)
+      const after = get().project
+      if (after?.assembledScenesVideoUrl) {
+        void get().stitchFinalVideoForProject()
+      }
     } catch (e) {
       console.error('generateMusicForProject:', e)
+    }
+  },
+
+  stitchFinalVideoForProject: async () => {
+    const project = get().project
+    if (!project?.id || project.id === 'pending') return
+    if (!project.assembledScenesVideoUrl || !project.musicUrl) return
+    if (stitchFinalInFlightProjectId === project.id) return
+
+    stitchFinalInFlightProjectId = project.id
+    set({
+      project: {
+        ...get().project!,
+        status: 'muxing',
+        finalVideoUrl: null,
+      },
+    })
+
+    try {
+      const res = await fetch('/api/stitch-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          assembledScenesVideoUrl: project.assembledScenesVideoUrl,
+          musicUrl: project.musicUrl,
+        }),
+      })
+      const json = (await res.json()) as { finalVideoUrl?: string; error?: string }
+      if (!res.ok || !json.finalVideoUrl) {
+        throw new Error(typeof json.error === 'string' ? json.error : 'Final mux failed')
+      }
+      set({
+        project: {
+          ...get().project!,
+          finalVideoUrl: json.finalVideoUrl,
+          status: 'complete',
+        },
+      })
+    } catch (e) {
+      console.error('stitchFinalVideoForProject:', e)
+      set({ project: { ...get().project!, status: 'error' } })
+    } finally {
+      stitchFinalInFlightProjectId = null
     }
   },
 
@@ -592,13 +644,17 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       if (!res.ok) {
         throw new Error(json.error || 'Stitch failed')
       }
+      const musicUrl = get().project!.musicUrl
       set({
         project: {
           ...get().project!,
           assembledScenesVideoUrl: json.assembledScenesVideoUrl ?? null,
-          status: 'complete',
+          status: musicUrl ? 'muxing' : 'composing_music',
         },
       })
+      if (musicUrl) {
+        await get().stitchFinalVideoForProject()
+      }
     } catch (e) {
       console.error('stitchSceneVideosForProject:', e)
       set({ project: { ...get().project!, status: 'error' } })
