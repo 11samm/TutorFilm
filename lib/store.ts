@@ -93,6 +93,8 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       return
     }
 
+    const preservedCharacterAnglesUrl = get().project?.characterAnglesUrl ?? null
+
     set({
       project: {
         id: 'pending',
@@ -106,7 +108,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         scenes: [],
         musicUrl: null,
         finalVideoUrl: null,
-        characterAnglesUrl: null,
+        characterAnglesUrl: preservedCharacterAnglesUrl,
       },
     })
 
@@ -144,10 +146,62 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           scenes: data.scenes,
           musicUrl: null,
           finalVideoUrl: null,
-          characterAnglesUrl: null,
+          characterAnglesUrl: preservedCharacterAnglesUrl,
         },
         currentTab: 'script',
       })
+
+      const characterAnglesUrlForThumbnails =
+        avatarType === 'default_male'
+          ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
+          : avatarType === 'default_female'
+            ? process.env.NEXT_PUBLIC_DEFAULT_FEMALE_ANGLES_URL
+            : avatarType === 'custom'
+              ? get().project?.characterAnglesUrl ?? undefined
+              : undefined
+
+      const scenesOrdered = [...data.scenes].sort((a, b) => a.order - b.order)
+
+      for (const scene of scenesOrdered) {
+        try {
+          get().updateScene(scene.id, { status: 'thumbnail_generating' })
+
+          const thumbBody: Record<string, string> = {
+            sceneId: scene.id,
+            projectId: data.projectId,
+            visualPrompt: scene.visualPrompt,
+            artStyle: data.script.artStyle,
+          }
+          if (characterAnglesUrlForThumbnails) {
+            thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
+          }
+
+          const thumbRes = await fetch('/api/generate-thumbnail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(thumbBody),
+          })
+
+          const thumbJson = (await thumbRes.json()) as {
+            thumbnailUrl?: string
+            error?: string
+          }
+
+          if (!thumbRes.ok || !thumbJson.thumbnailUrl) {
+            console.error('generate-thumbnail failed:', thumbJson.error ?? thumbRes.status)
+            get().updateScene(scene.id, { status: 'error' })
+            continue
+          }
+
+          get().updateScene(scene.id, {
+            thumbnailUrl: thumbJson.thumbnailUrl,
+            status: 'thumbnail_ready',
+          })
+        } catch (thumbErr) {
+          console.error('generate-thumbnail exception:', thumbErr)
+          get().updateScene(scene.id, { status: 'error' })
+        }
+      }
     } catch (err) {
       console.error('startGeneration:', err)
       set({ project: null })

@@ -16,6 +16,7 @@ import {
   Palette,
   User,
   Zap,
+  ImageIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -246,47 +247,87 @@ export function RightPane() {
               {scenes.map((scene) => (
                 <div
                   key={scene.id}
-                  className="group flex flex-col gap-3 rounded-xl border border-border bg-card/50 p-4 transition-colors hover:border-primary/30 hover:bg-card"
+                  className="group rounded-xl border border-border bg-card/50 p-4 transition-colors hover:border-primary/30 hover:bg-card"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold text-primary">
-                        {scene.order}
-                      </div>
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Scene {scene.order}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      <Badge
-                        variant="secondary"
-                        className="gap-1 text-xs font-normal"
-                      >
-                        <Eye className="h-3 w-3" />
-                        Visual
-                      </Badge>
-                      <Badge
-                        variant="secondary"
+                  <div className="flex flex-col gap-3 md:flex-row md:gap-4 md:items-stretch">
+                    <div className="relative w-full shrink-0 md:w-[min(100%,320px)] md:max-w-[40%]">
+                      <div
                         className={cn(
-                          "gap-1 border text-xs font-normal",
-                          wordCountBadgeClass(scene.wordCount)
+                          "relative aspect-video w-full overflow-hidden rounded-xl border border-border/70 bg-muted/25 shadow-inner",
+                          scene.status === "thumbnail_generating" &&
+                            "border-primary/25 bg-gradient-to-br from-primary/5 via-muted/40 to-muted/20"
                         )}
                       >
-                        <MessageSquare className="h-3 w-3" />
-                        {scene.wordCount} words
-                      </Badge>
+                        {scene.status === "thumbnail_generating" ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
+                            <Loader2 className="relative h-8 w-8 animate-spin text-primary" />
+                            <p className="relative text-center text-xs font-medium tracking-wide text-muted-foreground">
+                              Generating Pixar asset...
+                            </p>
+                          </div>
+                        ) : scene.thumbnailUrl ? (
+                          <img
+                            src={scene.thumbnailUrl}
+                            alt={`Scene ${scene.order} keyframe`}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full min-h-[7.5rem] flex-col items-center justify-center gap-2 p-4 text-center">
+                            <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                            <p className="text-[11px] text-muted-foreground">
+                              Thumbnail will appear here
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="rounded-lg bg-primary/5 p-3 ring-1 ring-primary/10">
-                    <p className="text-xs font-medium text-primary">{scene.visualPrompt}</p>
-                  </div>
+                    <div className="flex min-w-0 flex-1 flex-col gap-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-xs font-semibold text-primary">
+                            {scene.order}
+                          </div>
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Scene {scene.order}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                          <Badge
+                            variant="secondary"
+                            className="gap-1 text-xs font-normal"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Visual
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "gap-1 border text-xs font-normal",
+                              wordCountBadgeClass(scene.wordCount)
+                            )}
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                            {scene.wordCount} words
+                          </Badge>
+                        </div>
+                      </div>
 
-                  <div className="flex items-start gap-2">
-                    <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                    <p className="text-sm leading-relaxed text-foreground/90">
-                      {scene.dialogue}
-                    </p>
+                      <div className="rounded-lg bg-primary/5 p-3 ring-1 ring-primary/10">
+                        <p className="text-xs font-medium text-primary">
+                          {scene.visualPrompt}
+                        </p>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                        <p className="text-sm leading-relaxed text-foreground/90">
+                          {scene.dialogue}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

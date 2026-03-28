@@ -97,6 +97,18 @@ export interface GenerateScriptResponse {
   scenes: Scene[]
 }
 
+export interface GenerateThumbnailRequest {
+  sceneId: string
+  projectId: string
+  visualPrompt: string
+  artStyle: GeminiScriptOutput['artStyle']
+  characterAnglesUrl?: string
+}
+
+export interface GenerateThumbnailResponse {
+  thumbnailUrl: string
+}
+
 export interface GenerateVideoRequest {
   sceneId: string
   projectId: string
