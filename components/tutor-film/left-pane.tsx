@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Film,
   Clapperboard,
+  Loader2,
 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Switch } from "@/components/ui/switch"
@@ -68,6 +69,7 @@ export function LeftPane() {
   const isScripting = project?.status === "scripting"
   const isGeneratingAssets = project?.status === "generating_assets"
   const isGeneratingVideos = project?.status === "generating_videos"
+  const isStitching = project?.status === "stitching"
 
   const showCastAndVoice =
     !project || (project.stage === "setup" && project.status !== "scripting")
@@ -76,7 +78,8 @@ export function LeftPane() {
     ? [...project.scenes].sort((a, b) => a.order - b.order)
     : []
 
-  const busyPipeline = isGeneratingAssets || isGeneratingVideos
+  const busyPipeline =
+    isGeneratingAssets || isGeneratingVideos || isStitching
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card/30">
@@ -347,58 +350,110 @@ export function LeftPane() {
                   Videos
                 </h3>
               </div>
-              {scenesOrdered.map((scene) => (
-                <div
-                  key={scene.id}
-                  className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
-                >
-                  <div className="relative h-28 w-full bg-black/80 sm:h-32">
-                    {scene.status === "video_generating" ? (
-                      <div className="flex h-full flex-col items-center justify-center gap-1">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                        <span className="text-[10px] text-muted-foreground">
-                          Animating…
+              {scenesOrdered.map((scene) =>
+                scene.status === "error" ? (
+                  <div
+                    key={scene.id}
+                    className="overflow-hidden rounded-lg border-2 border-destructive/60 bg-destructive/5"
+                  >
+                    <div className="flex flex-col gap-2 px-3 py-3 sm:py-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-destructive">
+                          Scene {scene.order}
                         </span>
                       </div>
-                    ) : scene.videoUrl ? (
-                      <video
-                        src={scene.videoUrl}
-                        className="h-full w-full object-cover"
-                        controls
-                        playsInline
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
-                        No video
-                      </div>
-                    )}
+                      <p className="text-xs font-medium text-destructive">
+                        Generation Failed
+                      </p>
+                      <p className="text-[10px] leading-snug text-muted-foreground">
+                        Video generation did not complete. Check your connection and API
+                        limits, then retry.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9 w-full gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={
+                          !scene.thumbnailUrl ||
+                          busyPipeline
+                        }
+                        onClick={() => void generateVideoForScene(scene.id)}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Retry
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
-                    <span className="text-[10px] font-medium text-muted-foreground">
-                      Scene {scene.order}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 gap-1 px-2 text-[10px]"
-                      disabled={
-                        !scene.thumbnailUrl ||
-                        scene.status === "video_generating" ||
-                        busyPipeline
-                      }
-                      onClick={() => void generateVideoForScene(scene.id)}
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Redo
-                    </Button>
+                ) : (
+                  <div
+                    key={scene.id}
+                    className="overflow-hidden rounded-lg border border-border/60 bg-background/40"
+                  >
+                    <div className="relative h-28 w-full bg-black/80 sm:h-32">
+                      {scene.status === "video_generating" ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-1">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                          <span className="text-[10px] text-muted-foreground">
+                            Animating…
+                          </span>
+                        </div>
+                      ) : scene.videoUrl ? (
+                        <video
+                          src={scene.videoUrl}
+                          className="h-full w-full object-cover"
+                          controls
+                          playsInline
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">
+                          No video
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1">
+                      <span className="text-[10px] font-medium text-muted-foreground">
+                        Scene {scene.order}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[10px]"
+                        disabled={
+                          !scene.thumbnailUrl ||
+                          scene.status === "video_generating" ||
+                          busyPipeline
+                        }
+                        onClick={() => void generateVideoForScene(scene.id)}
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Redo
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              )}
             </motion.section>
           )}
 
-          {project?.stage === "final" && (
+          {project?.stage === "final" && project.status === "stitching" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-lg border border-amber-500/35 bg-amber-500/5 px-3 py-4 text-center"
+            >
+              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-amber-600 dark:text-amber-400" />
+              <p className="text-xs font-semibold text-foreground">
+                Assembling lesson video…
+              </p>
+              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                Scene clips are concatenated in order. This master will be sent to Lyria for
+                the score, then mixed into the final export.
+              </p>
+            </motion.div>
+          )}
+
+          {project?.stage === "final" && project.status === "complete" && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -409,7 +464,25 @@ export function LeftPane() {
                 Lesson finalized
               </p>
               <p className="mt-0.5 text-[10px] text-muted-foreground">
-                See the gallery on the right.
+                Combined scene video is ready. Lyria scoring and final mux come next.
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                See the gallery on the right — Final Render tab for the assembled clip.
+              </p>
+            </motion.div>
+          )}
+
+          {project?.stage === "final" && project.status === "error" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-4 text-center"
+            >
+              <p className="text-xs font-semibold text-destructive">
+                Assembly failed
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Could not combine scene videos. Check the server logs and try again.
               </p>
             </motion.div>
           )}
@@ -491,6 +564,7 @@ export function LeftPane() {
             disabled={
               busyPipeline ||
               isGeneratingVideos ||
+              isStitching ||
               scenesOrdered.some(
                 (s) => s.status === "video_generating" || !s.videoUrl
               )
@@ -508,6 +582,17 @@ export function LeftPane() {
                 Finalize lesson
               </>
             )}
+          </Button>
+        ) : null}
+
+        {!isScripting && project?.stage === "final" && project.status === "stitching" ? (
+          <Button
+            type="button"
+            disabled
+            className="h-9 w-full gap-1.5 text-xs font-semibold opacity-90"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Assembling video…
           </Button>
         ) : null}
       </div>

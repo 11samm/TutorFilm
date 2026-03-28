@@ -4,6 +4,7 @@ import { countWords } from '@/lib/validate-script'
 import { normalizeSceneDurationSeconds } from '@/lib/veo-duration'
 import type {
   Project,
+  ProjectStage,
   Scene,
   LessonData,
   ProjectStatus,
@@ -42,6 +43,44 @@ function enrichSceneFromApi(s: Scene): Scene {
   }
 }
 
+const SCENE_STATUSES: Scene['status'][] = [
+  'pending',
+  'thumbnail_generating',
+  'thumbnail_ready',
+  'video_generating',
+  'video_ready',
+  'complete',
+  'error',
+]
+
+function parseSceneStatusFromDb(raw: unknown): Scene['status'] {
+  const s = typeof raw === 'string' ? raw : ''
+  return SCENE_STATUSES.includes(s as Scene['status'])
+    ? (s as Scene['status'])
+    : 'pending'
+}
+
+/** Restore pipeline stage from persisted scene rows. */
+function deriveStageFromLoadedScenes(scenes: Scene[]): ProjectStage {
+  if (scenes.length === 0) return 'script_approval'
+  const allHaveThumb = scenes.every((s) => s.thumbnailUrl)
+  const allHaveVideo = scenes.every((s) => s.videoUrl)
+  if (allHaveVideo) return 'video_approval'
+
+  const touchedVideoPipeline = scenes.some(
+    (s) =>
+      s.status === 'video_generating' ||
+      s.status === 'video_ready' ||
+      s.status === 'complete' ||
+      s.status === 'error'
+  )
+  if (allHaveThumb && touchedVideoPipeline) return 'video_approval'
+
+  if (allHaveThumb && scenes.every((s) => !s.videoUrl)) return 'thumbnail_approval'
+  if (allHaveThumb) return 'video_approval'
+  return 'script_approval'
+}
+
 export interface TutorFilmStore {
   // ── Setup phase ────────────────────────────────────────────────────────────
   lessonData: LessonData | null
@@ -59,6 +98,7 @@ export interface TutorFilmStore {
   updateScene: (sceneId: string, updates: Partial<Scene>) => void
   updateProjectStatus: (status: ProjectStatus) => void
   setMusicUrl: (url: string) => void
+  setAssembledScenesVideoUrl: (url: string | null) => void
   setFinalVideoUrl: (url: string) => void
 
   generateScript: () => Promise<void>
@@ -68,6 +108,7 @@ export interface TutorFilmStore {
   regenerateThumbnailForScene: (sceneId: string) => Promise<void>
 
   generateVideoForScene: (sceneId: string) => Promise<void>
+  stitchSceneVideosForProject: () => Promise<void>
   loadLatestProjectFromDb: () => Promise<void>
 
   // ── UI state ───────────────────────────────────────────────────────────────
@@ -121,6 +162,12 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       return { project: { ...state.project, musicUrl: url } }
     }),
 
+  setAssembledScenesVideoUrl: (url) =>
+    set((state) => {
+      if (!state.project) return state
+      return { project: { ...state.project, assembledScenesVideoUrl: url } }
+    }),
+
   setFinalVideoUrl: (url) =>
     set((state) => {
       if (!state.project) return state
@@ -149,6 +196,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         script: null,
         scenes: [],
         musicUrl: null,
+        assembledScenesVideoUrl: null,
         finalVideoUrl: null,
         characterAnglesUrl: preservedCharacterAnglesUrl,
       },
@@ -188,6 +236,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           script: data.script,
           scenes: data.scenes.map(enrichSceneFromApi),
           musicUrl: null,
+          assembledScenesVideoUrl: null,
           finalVideoUrl: null,
           characterAnglesUrl: preservedCharacterAnglesUrl,
         },
@@ -344,9 +393,10 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           project: {
             ...get().project!,
             stage: 'final',
-            status: 'complete',
+            status: 'stitching',
           },
         })
+        await get().stitchSceneVideosForProject()
         break
       }
       default:
@@ -484,6 +534,44 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     }
   },
 
+  stitchSceneVideosForProject: async () => {
+    const project = get().project
+    if (!project?.id || project.id === 'pending') return
+
+    const ordered = [...project.scenes].sort((a, b) => a.order - b.order)
+    for (const s of ordered) {
+      if (!s.videoUrl) {
+        set({ project: { ...get().project!, status: 'error' } })
+        return
+      }
+    }
+
+    try {
+      const res = await fetch('/api/stitch-scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id }),
+      })
+      const json = (await res.json()) as {
+        assembledScenesVideoUrl?: string
+        error?: string
+      }
+      if (!res.ok) {
+        throw new Error(json.error || 'Stitch failed')
+      }
+      set({
+        project: {
+          ...get().project!,
+          assembledScenesVideoUrl: json.assembledScenesVideoUrl ?? null,
+          status: 'complete',
+        },
+      })
+    } catch (e) {
+      console.error('stitchSceneVideosForProject:', e)
+      set({ project: { ...get().project!, status: 'error' } })
+    }
+  },
+
   loadLatestProjectFromDb: async () => {
     const supabase = createBrowserClient()
     const { data: row, error } = await supabase
@@ -512,6 +600,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       character_angles_url: string | null
       script_json: unknown
       music_url: string | null
+      assembled_scenes_video_url: string | null
       final_video_url: string | null
       scenes: Array<Record<string, unknown>> | null
     }
@@ -535,8 +624,8 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           scriptHtml: dialogue,
           confirmed: true,
           thumbnailUrl: (s.thumbnail_url as string | null) ?? null,
-          videoUrl: null,
-          status: 'thumbnail_ready' as Scene['status'],
+          videoUrl: (s.video_url as string | null) ?? null,
+          status: parseSceneStatusFromDb(s.status),
         }
       })
       .sort((a, b) => a.order - b.order)
@@ -545,11 +634,13 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
 
     const totalDuration = scenesMapped.reduce((acc, s) => acc + s.durationSeconds, 0)
 
+    const restoredStage = deriveStageFromLoadedScenes(scenesMapped)
+
     const project: Project = {
       id: r.id,
       sessionId: r.session_id,
       status: 'idle',
-      stage: 'thumbnail_approval',
+      stage: restoredStage,
       lessonPrompt: r.lesson_prompt ?? '',
       pdfUrl: r.pdf_url,
       avatarType: r.avatar_type as AvatarType,
@@ -558,6 +649,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
       script,
       scenes: scenesMapped,
       musicUrl: r.music_url,
+      assembledScenesVideoUrl: r.assembled_scenes_video_url ?? null,
       finalVideoUrl: r.final_video_url,
     }
 

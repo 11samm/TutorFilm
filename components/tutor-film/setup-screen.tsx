@@ -231,14 +231,14 @@ export function SetupScreen({ onStart }: SetupScreenProps) {
                   <Slider
                     value={duration}
                     onValueChange={setDuration}
-                    min={15}
+                    min={16}
                     max={60}
-                    step={1}
+                    step={2}
                     className="w-full"
                   />
                   <div className="flex justify-between text-[9px] text-muted-foreground">
-                    <span>15 sec</span>
-                    <span>45 sec</span>
+                    <span>16 sec</span>
+                    <span>38 sec</span>
                     <span>60 sec</span>
                   </div>
                 </div>

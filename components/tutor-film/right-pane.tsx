@@ -58,8 +58,12 @@ export function RightPane() {
   const isGenerating =
     project?.status === "scripting" ||
     project?.status === "generating_assets" ||
-    project?.status === "generating_videos"
+    project?.status === "generating_videos" ||
+    project?.status === "stitching"
   const isComplete = project?.status === "complete"
+
+  const masterVideoUrl =
+    project?.finalVideoUrl ?? project?.assembledScenesVideoUrl ?? null
 
   const scenes = project?.scenes ?? []
   const galleryScenes = scenes.filter((s) => s.confirmed)
@@ -111,6 +115,7 @@ export function RightPane() {
     if (project?.status === "scripting") return "Writing script..."
     if (project?.status === "generating_assets") return "Generating keyframes..."
     if (project?.status === "generating_videos") return "Animating scenes..."
+    if (project?.status === "stitching") return "Assembling lesson video..."
     if (!galleryScenes.length) return "Awaiting confirmation"
     return "Gallery"
   }
@@ -400,56 +405,86 @@ export function RightPane() {
         </TabsContent>
 
         <TabsContent value="render" className="mt-0 flex-1 overflow-hidden">
-          <div className="flex h-full flex-col items-center justify-center gap-6 p-6">
+          <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
             <div className="relative aspect-video w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-background to-primary/5 shadow-2xl shadow-primary/10">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <button
-                  type="button"
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-primary/40"
-                >
-                  {isPlaying ? (
-                    <Pause className="h-8 w-8" />
-                  ) : (
-                    <Play className="ml-1 h-8 w-8" />
-                  )}
-                </button>
-              </div>
+              {masterVideoUrl ? (
+                <video
+                  src={masterVideoUrl}
+                  className="h-full w-full object-contain"
+                  controls
+                  playsInline
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                />
+              ) : (
+                <>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsPlaying(!isPlaying)}
+                      className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-primary/40"
+                    >
+                      {isPlaying ? (
+                        <Pause className="h-8 w-8" />
+                      ) : (
+                        <Play className="ml-1 h-8 w-8" />
+                      )}
+                    </button>
+                  </div>
 
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/90 to-transparent p-4">
-                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>0:00</span>
-                  <span>3:24</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full w-0 rounded-full bg-primary transition-all" />
-                </div>
-              </div>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/90 to-transparent p-4">
+                    <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>0:00</span>
+                      <span>—</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                      <div className="h-full w-0 rounded-full bg-primary transition-all" />
+                    </div>
+                  </div>
 
-              <button
-                type="button"
-                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg bg-background/50 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-background/80 hover:text-foreground"
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg bg-background/50 text-muted-foreground backdrop-blur-sm transition-colors hover:bg-background/80 hover:text-foreground"
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </button>
+                </>
+              )}
             </div>
 
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>Duration: 3:24</span>
-                <span className="h-1 w-1 rounded-full bg-muted-foreground" />
-                <span>1080p HD</span>
-                <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+            <div className="flex max-w-xl flex-col items-center gap-3 text-center">
+              <p className="text-[11px] text-muted-foreground">
+                {project?.finalVideoUrl
+                  ? "Final export with music (Lyria) when available."
+                  : project?.assembledScenesVideoUrl
+                    ? "Scene clips combined — Lyria score and final mux will follow."
+                    : "Finalize the lesson to assemble scene clips and unlock the player."}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
                 <span>{galleryScenes.length} Scenes</span>
               </div>
 
-              <Button
-                size="lg"
-                className="mt-2 gap-2 bg-primary px-8 shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25"
-              >
-                <Download className="h-5 w-5" />
-                Download MP4
-              </Button>
+              {masterVideoUrl ? (
+                <Button
+                  size="lg"
+                  className="mt-0 gap-2 bg-primary px-8 shadow-lg shadow-primary/20 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25"
+                  asChild
+                >
+                  <a href={masterVideoUrl} download="tutor-film-lesson.mp4">
+                    <Download className="h-5 w-5" />
+                    Download MP4
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  disabled
+                  className="mt-0 gap-2 px-8 opacity-60"
+                >
+                  <Download className="h-5 w-5" />
+                  Download MP4
+                </Button>
+              )}
             </div>
           </div>
         </TabsContent>

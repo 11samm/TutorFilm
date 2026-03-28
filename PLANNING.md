@@ -62,9 +62,10 @@ The UI is a **40/60 split-pane** workspace after the setup screen:
           │  POST /api/generate-script  │──► Gemini 3.1 flash-lite
           │  POST /api/generate-angles  │──► Nano Banana 2
           │  POST /api/generate-thumb   │──► Nano Banana 2
-          │  POST /api/generate-video   │──► Veo (per scene)
-          │  POST /api/generate-music   │──► Lyria 3
-          │  POST /api/stitch-video     │──► FFmpeg (server-side)
+│  POST /api/generate-video   │──► Veo (per scene)
+│  POST /api/stitch-scenes    │──► FFmpeg concat (scene MP4s → master for Lyria)
+│  POST /api/generate-music   │──► Lyria 3
+│  POST /api/stitch-video     │──► FFmpeg (server-side, mux music into final)
           └─────────────┬───────────────┘
                         │
           ┌─────────────▼───────────────┐
@@ -106,7 +107,8 @@ flowchart TD
 | Video generation is **sequential per scene** (not `Promise.all`) | Respects Veo rate limits; UI updates after each clip, not all at once |
 | Supabase **Realtime** subscription drives the right pane | No polling; `scenes` row updates push to browser instantly |
 | Lyria music fires **concurrently** with video loop | Music has no dependency on individual scenes; parallelizing saves ~15s |
-| FFmpeg runs **server-side** only after all scenes + music are ready | Avoids partial assemblies; temp files are cleaned up immediately after upload |
+| **Finalize lesson** triggers `POST /api/stitch-scenes` | Concatenates scene MP4s in order; uploads master to Storage; sets `projects.assembled_scenes_video_url` for the Lyria scoring step; final mux (music bed) remains `POST /api/stitch-video` → `final_video_url` |
+| FFmpeg runs **server-side** for assembly and final stitch | Temp files cleaned after upload; `stitch-scenes` uses libx264/aac for reliable concat across Veo outputs |
 | No blocking `Promise.all` for video gen | Frontend calls `/api/generate-video` for one scene, awaits, moves to next — right pane scene cards light up one by one |
 
 ---
@@ -132,6 +134,7 @@ create table projects (
   character_angles_url text,
   script_json   jsonb,
   music_url     text,
+  assembled_scenes_video_url text,  -- FFmpeg concat of scenes; Lyria input; then mux → final_video_url
   final_video_url text,
   created_at    timestamptz default now()
 );

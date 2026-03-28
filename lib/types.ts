@@ -68,6 +68,8 @@ export interface Project {
   script: GeminiScriptOutput | null
   scenes: Scene[]
   musicUrl: string | null
+  /** Scene clips concatenated in order; sent to Lyria later for score, then muxed into {@link finalVideoUrl}. */
+  assembledScenesVideoUrl: string | null
   finalVideoUrl: string | null
 }
 
@@ -152,4 +154,12 @@ export interface StitchVideoRequest {
 
 export interface StitchVideoResponse {
   finalVideoUrl: string
+}
+
+export interface StitchScenesRequest {
+  projectId: string
+}
+
+export interface StitchScenesResponse {
+  assembledScenesVideoUrl: string
 }
