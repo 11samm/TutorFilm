@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { countWords, validateScenes } from '@/lib/validate-script'
+import { countWords, validateDurationBudget, validateScenes } from '@/lib/validate-script'
 import type {
   AvatarType,
   GenerateScriptRequest,
@@ -47,8 +47,7 @@ function targetAgeDialogueGuidance(band: TargetAgeBand): string {
 
 const MODEL = 'gemini-3.1-pro-preview'
 
-function buildResponseSchema(targetSceneCount: number) {
-  const n = String(targetSceneCount)
+function buildResponseSchema() {
   return {
     type: Type.OBJECT,
     required: ['title', 'targetAge', 'artStyle', 'voiceCharacterId', 'musicMood', 'scenes'],
@@ -71,21 +70,28 @@ function buildResponseSchema(targetSceneCount: number) {
       },
       scenes: {
         type: Type.ARRAY,
-        minItems: n,
-        maxItems: n,
+        description:
+          'Ordered list of scenes for the full video. MUST include at least 1 scene and at most 48 scenes.',
         items: {
           type: Type.OBJECT,
-          required: ['order', 'sceneType', 'dialogue', 'visualPrompt'],
+          required: ['order', 'sceneType', 'dialogue', 'visualPrompt', 'durationSeconds'],
           properties: {
-            order: { type: Type.INTEGER, description: '1-based scene index' },
+            order: { type: Type.INTEGER, description: '1-based scene index in playback order' },
             sceneType: {
               type: Type.STRING,
               format: 'enum',
               enum: ['avatar_present', 'broll', 'mixed'],
+              description: 'One of: avatar_present, broll, mixed',
+            },
+            durationSeconds: {
+              type: Type.INTEGER,
+              description:
+                'The duration of the scene in seconds. MUST be an integer between 1 and 8.',
             },
             dialogue: {
               type: Type.STRING,
-              description: 'Spoken narration; MUST be between 18 and 20 words inclusive',
+              description:
+                'Spoken narration; word count must not exceed floor(durationSeconds * 2.5) words',
             },
             visualPrompt: {
               type: Type.STRING,
@@ -98,12 +104,13 @@ function buildResponseSchema(targetSceneCount: number) {
   }
 }
 
-function buildSystemInstruction(targetSceneCount: number, req: GenerateScriptRequest): string {
-  const { voiceCharacterId, avatarType, targetAge } = req
+function buildSystemInstruction(req: GenerateScriptRequest): string {
+  const { voiceCharacterId, avatarType, targetAge, targetDurationSeconds } = req
   const visualAvatarRule = avatarVisualDirective(avatarType)
   const dialogueAgeRule = targetAgeDialogueGuidance(targetAge)
 
-  return `You are an expert children's educational video scriptwriter.
+  return `You are the Director. The user wants a video of exactly ${targetDurationSeconds} seconds total. You must break this down into multiple scenes. NO SCENE CAN BE LONGER THAN 8 SECONDS. You decide the duration of each scene to fit the pacing, but the sum of all \`durationSeconds\` MUST equal ${targetDurationSeconds}. For the dialogue, strictly follow the rule of ~2.5 words per second (e.g., a 4-second scene gets max 10 words, an 8-second scene gets max 20 words).
+
 Your output must be ONLY valid JSON matching the enforced response schema — no markdown fences, no commentary.
 
 TARGET AUDIENCE BAND: ${targetAge}
@@ -117,19 +124,20 @@ DECOUPLING (CRITICAL — DO NOT VIOLATE):
 - Never use voiceCharacterId to pick what the on-screen character looks like; visuals follow avatarType only.
 
 CRITICAL RULES:
-- Produce EXACTLY ${targetSceneCount} scenes in the "scenes" array (no more, no fewer).
-- Each scene's "dialogue" MUST contain between 18 and 20 words (inclusive). Count every word carefully before responding. Too short is acceptable; over 20 words is NEVER allowed.
+- Each scene MUST include integer "durationSeconds" from 1 to 8 inclusive.
+- The sum of every scene's "durationSeconds" MUST equal exactly ${targetDurationSeconds}.
+- Each scene's "dialogue" word count MUST NOT exceed Math.floor(durationSeconds * 2.5) words for that scene.
 - Each "visualPrompt" must describe cinematic shots in a Pixar / Disney Junior–style 3D animation look (bright, readable, child-friendly) while obeying the visual avatar rules above.
 - Set "voiceCharacterId" to exactly: "${voiceCharacterId}" (do not use any other voice id). This id is for labeling narration style only.
-- "order" must run from 1 through ${targetSceneCount} in sequence without gaps or duplicates.
+- "order" must be a contiguous sequence starting at 1 with no gaps or duplicates.
 - "sceneType" must be one of: avatar_present | broll | mixed — choose what fits the beat of the lesson.`
 }
 
-function buildUserPrompt(req: GenerateScriptRequest, targetSceneCount: number): string {
+function buildUserPrompt(req: GenerateScriptRequest): string {
   const parts: string[] = [
     `Lesson concept (plain text):\n${req.lessonPrompt}`,
     `Target audience band (for dialogue only): ${req.targetAge}`,
-    `Target approximate video length: ${req.targetDurationMinutes} minutes → you MUST output exactly ${targetSceneCount} scenes (8 seconds each).`,
+    `Total target video duration: ${req.targetDurationSeconds} seconds — allocate this across scenes; scene durations must sum to this total.`,
     `Visual avatar mode for this project (controls on-screen look only): ${req.avatarType}.`,
     `Voice character id (audio / narration label only — must appear verbatim in the JSON, must NOT drive visuals): ${req.voiceCharacterId}`,
   ]
@@ -153,8 +161,7 @@ function parseGeminiScript(text: string | undefined): GeminiScriptOutput {
 async function callGemini(
   ai: GoogleGenAI,
   systemInstruction: string,
-  userContent: string,
-  targetSceneCount: number
+  userContent: string
 ): Promise<GeminiScriptOutput> {
   const response = await ai.models.generateContent({
     model: MODEL,
@@ -163,7 +170,7 @@ async function callGemini(
       systemInstruction,
       temperature: 0.35,
       responseMimeType: 'application/json',
-      responseSchema: buildResponseSchema(targetSceneCount),
+      responseSchema: buildResponseSchema(),
     },
   })
   return parseGeminiScript(response.text)
@@ -186,14 +193,15 @@ export async function POST(request: Request) {
     typeof b.lessonPrompt !== 'string' ||
     typeof b.avatarType !== 'string' ||
     typeof b.voiceCharacterId !== 'string' ||
-    typeof b.targetDurationMinutes !== 'number' ||
-    !Number.isFinite(b.targetDurationMinutes) ||
+    typeof b.targetDurationSeconds !== 'number' ||
+    !Number.isFinite(b.targetDurationSeconds) ||
+    b.targetDurationSeconds <= 0 ||
     !isTargetAgeBand(b.targetAge)
   ) {
     return NextResponse.json(
       {
         error:
-          'Missing or invalid fields: lessonPrompt (string), avatarType, voiceCharacterId, targetAge (preschool | kindergarten | primary), targetDurationMinutes (number)',
+          'Missing or invalid fields: lessonPrompt (string), avatarType, voiceCharacterId, targetAge (preschool | kindergarten | primary), targetDurationSeconds (positive number)',
       },
       { status: 400 }
     )
@@ -205,7 +213,7 @@ export async function POST(request: Request) {
     avatarType: b.avatarType as GenerateScriptRequest['avatarType'],
     voiceCharacterId: b.voiceCharacterId,
     targetAge: b.targetAge,
-    targetDurationMinutes: b.targetDurationMinutes,
+    targetDurationSeconds: b.targetDurationSeconds,
   }
 
   const apiKey = process.env.GEMINI_API_KEY
@@ -213,32 +221,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Server misconfiguration: GEMINI_API_KEY is not set' }, { status: 500 })
   }
 
-  const targetSceneCount = Math.max(1, Math.ceil((req.targetDurationMinutes * 60) / 8))
-  const systemInstruction = buildSystemInstruction(targetSceneCount, req)
-  const baseUserPrompt = buildUserPrompt(req, targetSceneCount)
+  const systemInstruction = buildSystemInstruction(req)
+  const baseUserPrompt = buildUserPrompt(req)
 
   const ai = new GoogleGenAI({ apiKey })
 
   try {
-    let script = await callGemini(ai, systemInstruction, baseUserPrompt, targetSceneCount)
+    let script = await callGemini(ai, systemInstruction, baseUserPrompt)
     script.voiceCharacterId = req.voiceCharacterId
 
+    const budget = validateDurationBudget(script.scenes, req.targetDurationSeconds)
     let validation = validateScenes(script.scenes)
-    if (!validation.valid) {
+
+    if (!budget.valid || !validation.valid) {
       const retryUserContent = `${baseUserPrompt}
 
 ---
-CORRECTION REQUIRED — your previous JSON had scenes with more than 20 words in "dialogue".
-Violations (by scene order): ${JSON.stringify(validation.violations)}
-Regenerate the ENTIRE JSON. Every scene's dialogue must be 18–20 words. Keep EXACTLY ${targetSceneCount} scenes. Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
+CORRECTION REQUIRED — your previous JSON failed validation.
+- Duration sum: got ${budget.sum}, must equal ${req.targetDurationSeconds} seconds total.
+- Violations: ${JSON.stringify(validation.violations)}
+Regenerate the ENTIRE JSON. Obey duration budget, per-scene max 8s, and per-scene word limits (~2.5 words per second of dialogue). Preserve "voiceCharacterId" as "${req.voiceCharacterId}".`
 
-      script = await callGemini(ai, systemInstruction, retryUserContent, targetSceneCount)
+      script = await callGemini(ai, systemInstruction, retryUserContent)
       script.voiceCharacterId = req.voiceCharacterId
+
+      const budget2 = validateDurationBudget(script.scenes, req.targetDurationSeconds)
       validation = validateScenes(script.scenes)
-      if (!validation.valid) {
+      if (!budget2.valid || !validation.valid) {
         return NextResponse.json(
           {
             error: 'Script validation failed after retry',
+            durationSum: budget2.sum,
             violations: validation.violations,
           },
           { status: 422 }
@@ -281,13 +294,16 @@ Regenerate the ENTIRE JSON. Every scene's dialogue must be 18–20 words. Keep E
       word_count: countWords(s.dialogue),
       visual_prompt: s.visualPrompt,
       scene_type: s.sceneType,
+      duration_seconds: s.durationSeconds,
       status: 'pending' as const,
     }))
 
     const { data: sceneRows, error: scenesError } = await supabase
       .from('scenes')
       .insert(sceneInserts)
-      .select('id, order, dialogue, word_count, visual_prompt, scene_type, thumbnail_url, video_url, status')
+      .select(
+        'id, order, dialogue, word_count, visual_prompt, scene_type, duration_seconds, thumbnail_url, video_url, status'
+      )
 
     if (scenesError || !sceneRows?.length) {
       console.error('Supabase scenes insert:', scenesError)
@@ -305,6 +321,7 @@ Regenerate the ENTIRE JSON. Every scene's dialogue must be 18–20 words. Keep E
       sceneType: row.scene_type as Scene['sceneType'],
       dialogue: row.dialogue as string,
       wordCount: row.word_count as number,
+      durationSeconds: (row.duration_seconds as number) ?? 8,
       visualPrompt: row.visual_prompt as string,
       thumbnailUrl: row.thumbnail_url as string | null,
       videoUrl: row.video_url as string | null,

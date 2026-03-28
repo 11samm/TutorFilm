@@ -20,6 +20,7 @@ export type SceneStatus =
   | 'thumbnail_generating'
   | 'thumbnail_ready'
   | 'video_generating'
+  | 'video_ready'
   | 'complete'
   | 'error'
 
@@ -29,9 +30,11 @@ export interface Scene {
   id: string
   order: number
   sceneType: SceneType
-  dialogue: string // HARD LIMIT: ≤20 words — enforced server-side before DB insert
+  dialogue: string
   wordCount: number
-  visualPrompt: string // passed to Nano Banana 2 for thumbnail generation
+  /** Scene clip length in seconds (≤8). Drives proportional dialogue cap. */
+  durationSeconds: number
+  visualPrompt: string
   thumbnailUrl: string | null
   videoUrl: string | null
   status: SceneStatus
@@ -44,8 +47,8 @@ export interface Project {
   lessonPrompt: string
   pdfUrl: string | null
   avatarType: AvatarType
-  voiceCharacterId: string // key into VOICE_CATALOG
-  characterAnglesUrl: string | null // Nano Banana 2 4-angle sheet output URL
+  voiceCharacterId: string
+  characterAnglesUrl: string | null
   script: GeminiScriptOutput | null
   scenes: Scene[]
   musicUrl: string | null
@@ -54,9 +57,9 @@ export interface Project {
 
 export interface LessonData {
   lessonPrompt: string
-  uploadedFile: string | null // display name only (e.g. "chapter3.pdf")
-  uploadedFileUrl: string | null // Supabase Storage public URL
-  duration: number // target seconds (e.g. 15–60) → used to calculate scene count
+  uploadedFile: string | null
+  uploadedFileUrl: string | null
+  duration: number
   targetAge: TargetAgeBand
 }
 
@@ -64,18 +67,20 @@ export interface LessonData {
 
 export interface GeminiScriptOutput {
   title: string
-  targetAge: string // e.g. "5-8"
+  targetAge: string
   artStyle: 'pixar_3d' | 'disney_junior' | 'watercolor_storybook'
-  voiceCharacterId: string // must be a valid key from VOICE_CATALOG
-  musicMood: string // e.g. "adventurous, orchestral, childlike wonder"
+  voiceCharacterId: string
+  musicMood: string
   scenes: GeminiRawScene[]
 }
 
 export interface GeminiRawScene {
   order: number
   sceneType: SceneType
-  dialogue: string // Gemini is prompted to keep this ≤20 words
-  visualPrompt: string // detailed Pixar/Disney art direction prompt
+  dialogue: string
+  visualPrompt: string
+  /** Seconds for this scene (1–8). Sum across scenes must equal target video length. */
+  durationSeconds: number
 }
 
 // ─── API Request / Response Types ───────────────────────────────────────────
@@ -85,10 +90,9 @@ export interface GenerateScriptRequest {
   pdfUrl?: string
   avatarType: AvatarType
   voiceCharacterId: string
-  /** Audience band — drives dialogue vocabulary; distinct from scene duration. */
   targetAge: TargetAgeBand
-  /** Used only to compute scene count; not replaced by targetAge. */
-  targetDurationMinutes: number
+  /** Total output video length in seconds (e.g. 15–60). Director splits across scenes. */
+  targetDurationSeconds: number
 }
 
 export interface GenerateScriptResponse {
@@ -116,6 +120,7 @@ export interface GenerateVideoRequest {
   visualPrompt: string
   dialogue: string
   voiceCharacterId: string
+  durationSeconds: number
   characterAnglesUrl?: string
 }
 
@@ -125,7 +130,7 @@ export interface GenerateVideoResponse {
 
 export interface StitchVideoRequest {
   projectId: string
-  sceneVideoUrls: string[] // ordered array
+  sceneVideoUrls: string[]
   musicUrl: string
 }
 

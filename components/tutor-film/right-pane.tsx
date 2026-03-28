@@ -17,6 +17,7 @@ import {
   User,
   Zap,
   ImageIcon,
+  Clock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { useTutorFilmStore } from "@/lib/store"
 import { VOICE_CATALOG } from "@/lib/voice-catalog"
+import { maxWordsForScene } from "@/lib/validate-script"
 
 const generationSteps = [
   { id: 1, label: "Script drafted", description: "AI has written the lesson script" },
@@ -35,14 +37,17 @@ const generationSteps = [
   { id: 6, label: "Rendering video", description: "Final video being assembled" },
 ]
 
-function wordCountBadgeClass(wordCount: number) {
-  if (wordCount <= 18) {
+function wordCountBadgeClass(wordCount: number, maxWords: number) {
+  if (maxWords <= 0) {
+    return "border-muted-foreground/30 bg-muted/30 text-muted-foreground"
+  }
+  if (wordCount > maxWords) {
+    return "border-red-500/40 bg-red-500/12 text-red-700 dark:text-red-400"
+  }
+  if (wordCount <= Math.floor(maxWords * 0.85)) {
     return "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
   }
-  if (wordCount <= 20) {
-    return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
-  }
-  return "border-red-500/40 bg-red-500/12 text-red-700 dark:text-red-400"
+  return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-300"
 }
 
 export function RightPane() {
@@ -254,11 +259,21 @@ export function RightPane() {
                       <div
                         className={cn(
                           "relative aspect-video w-full overflow-hidden rounded-xl border border-border/70 bg-muted/25 shadow-inner",
-                          scene.status === "thumbnail_generating" &&
+                          (scene.status === "thumbnail_generating" ||
+                            scene.status === "video_generating") &&
                             "border-primary/25 bg-gradient-to-br from-primary/5 via-muted/40 to-muted/20"
                         )}
                       >
-                        {scene.status === "thumbnail_generating" ? (
+                        {scene.videoUrl ? (
+                          <video
+                            src={scene.videoUrl}
+                            className="h-full w-full object-cover"
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                          />
+                        ) : scene.status === "thumbnail_generating" ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
                             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
                             <Loader2 className="relative h-8 w-8 animate-spin text-primary" />
@@ -267,12 +282,22 @@ export function RightPane() {
                             </p>
                           </div>
                         ) : scene.thumbnailUrl ? (
-                          <img
-                            src={scene.thumbnailUrl}
-                            alt={`Scene ${scene.order} keyframe`}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                          />
+                          <div className="relative h-full w-full">
+                            <img
+                              src={scene.thumbnailUrl}
+                              alt={`Scene ${scene.order} keyframe`}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                            {scene.status === "video_generating" && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/65 p-4 backdrop-blur-[2px]">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                <p className="text-center text-xs font-medium tracking-wide text-foreground">
+                                  Animating with Veo...
+                                </p>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <div className="flex h-full min-h-[7.5rem] flex-col items-center justify-center gap-2 p-4 text-center">
                             <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
@@ -304,9 +329,19 @@ export function RightPane() {
                           </Badge>
                           <Badge
                             variant="secondary"
+                            className="gap-1 border border-border/60 bg-background/80 text-xs font-normal text-muted-foreground"
+                          >
+                            <Clock className="h-3 w-3" />
+                            {scene.durationSeconds ?? 8}s
+                          </Badge>
+                          <Badge
+                            variant="secondary"
                             className={cn(
                               "gap-1 border text-xs font-normal",
-                              wordCountBadgeClass(scene.wordCount)
+                              wordCountBadgeClass(
+                                scene.wordCount,
+                                maxWordsForScene(scene.durationSeconds ?? 8)
+                              )
                             )}
                           >
                             <MessageSquare className="h-3 w-3" />

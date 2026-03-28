@@ -119,7 +119,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         body: JSON.stringify({
           lessonPrompt: lessonData.lessonPrompt,
           pdfUrl: lessonData.uploadedFileUrl ?? undefined,
-          targetDurationMinutes: lessonData.duration / 60,
+          targetDurationSeconds: lessonData.duration,
           targetAge: lessonData.targetAge,
           avatarType,
           voiceCharacterId,
@@ -199,6 +199,66 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
           })
         } catch (thumbErr) {
           console.error('generate-thumbnail exception:', thumbErr)
+          get().updateScene(scene.id, { status: 'error' })
+        }
+      }
+
+      get().updateProjectStatus('generating_videos')
+
+      const characterAnglesUrlForVideo =
+        avatarType === 'default_male'
+          ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
+          : avatarType === 'default_female'
+            ? process.env.NEXT_PUBLIC_DEFAULT_FEMALE_ANGLES_URL
+            : avatarType === 'custom'
+              ? get().project?.characterAnglesUrl ?? undefined
+              : undefined
+
+      const scenesForVideo = [...(get().project?.scenes ?? [])].sort((a, b) => a.order - b.order)
+
+      for (const scene of scenesForVideo) {
+        if (!scene.thumbnailUrl) {
+          continue
+        }
+        try {
+          get().updateScene(scene.id, { status: 'video_generating' })
+
+          const videoBody: Record<string, string | number> = {
+            sceneId: scene.id,
+            projectId: data.projectId,
+            thumbnailUrl: scene.thumbnailUrl,
+            visualPrompt: scene.visualPrompt,
+            dialogue: scene.dialogue,
+            voiceCharacterId,
+            durationSeconds: scene.durationSeconds,
+          }
+          if (characterAnglesUrlForVideo) {
+            videoBody.characterAnglesUrl = characterAnglesUrlForVideo
+          }
+
+          const videoRes = await fetch('/api/generate-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(videoBody),
+          })
+
+          const videoJson = (await videoRes.json()) as {
+            videoUrl?: string
+            error?: string
+          }
+
+          if (!videoRes.ok || !videoJson.videoUrl) {
+            console.error('generate-video failed:', videoJson.error ?? videoRes.status)
+            get().updateScene(scene.id, { status: 'error' })
+            continue
+          }
+
+          get().updateScene(scene.id, {
+            videoUrl: videoJson.videoUrl,
+            status: 'video_ready',
+          })
+        } catch (videoErr) {
+          console.error('generate-video exception:', videoErr)
           get().updateScene(scene.id, { status: 'error' })
         }
       }
