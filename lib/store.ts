@@ -258,6 +258,8 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     if (!project?.id || project.id === 'pending') return
     if (!project.script) return
 
+    const script = project.script
+
     const characterAnglesUrlForThumbnails =
       project.avatarType === 'default_male'
         ? process.env.NEXT_PUBLIC_DEFAULT_MALE_ANGLES_URL
@@ -272,71 +274,73 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     const scenesOrdered = [...project.scenes].sort((a, b) => a.order - b.order)
     const maxRetries = 3
 
-    for (const scene of scenesOrdered) {
-      try {
-        const sceneNow = get().project?.scenes.find((s) => s.id === scene.id)
-        if (!sceneNow) continue
+    await Promise.all(
+      scenesOrdered.map(async (scene) => {
+        try {
+          const sceneNow = get().project?.scenes.find((s) => s.id === scene.id)
+          if (!sceneNow) return
 
-        get().updateScene(scene.id, { status: 'thumbnail_generating' })
+          get().updateScene(scene.id, { status: 'thumbnail_generating' })
 
-        const visualPrompt = sceneNow.thumbnailPrompt?.trim() || sceneNow.visualPrompt
+          const visualPrompt = sceneNow.thumbnailPrompt?.trim() || sceneNow.visualPrompt
 
-        const thumbBody: Record<string, string> = {
-          sceneId: scene.id,
-          projectId: project.id,
-          visualPrompt,
-          artStyle: project.script.artStyle,
-        }
-        if (characterAnglesUrlForThumbnails) {
-          thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
-        }
+          const thumbBody: Record<string, string> = {
+            sceneId: scene.id,
+            projectId: project.id,
+            visualPrompt,
+            artStyle: script.artStyle,
+          }
+          if (characterAnglesUrlForThumbnails) {
+            thumbBody.characterAnglesUrl = characterAnglesUrlForThumbnails
+          }
 
-        let thumbnailSuccess = false
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            const thumbRes = await fetch('/api/generate-thumbnail', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(thumbBody),
-            })
-
-            const thumbJson = (await thumbRes.json()) as {
-              thumbnailUrl?: string
-              error?: string
-            }
-
-            if (thumbRes.ok && thumbJson.thumbnailUrl) {
-              get().updateScene(scene.id, {
-                thumbnailUrl: thumbJson.thumbnailUrl,
-                status: 'thumbnail_ready',
+          let thumbnailSuccess = false
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const thumbRes = await fetch('/api/generate-thumbnail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(thumbBody),
               })
-              thumbnailSuccess = true
-              break
+
+              const thumbJson = (await thumbRes.json()) as {
+                thumbnailUrl?: string
+                error?: string
+              }
+
+              if (thumbRes.ok && thumbJson.thumbnailUrl) {
+                get().updateScene(scene.id, {
+                  thumbnailUrl: thumbJson.thumbnailUrl,
+                  status: 'thumbnail_ready',
+                })
+                thumbnailSuccess = true
+                break
+              }
+
+              console.warn(
+                'Thumbnail failed, retrying... Attempt',
+                `${attempt}/${maxRetries}`,
+                thumbJson.error ?? thumbRes.status
+              )
+            } catch (thumbErr) {
+              console.warn('Thumbnail failed, retrying... Attempt', `${attempt}/${maxRetries}`, thumbErr)
             }
 
-            console.warn(
-              'Thumbnail failed, retrying... Attempt',
-              `${attempt}/${maxRetries}`,
-              thumbJson.error ?? thumbRes.status
-            )
-          } catch (thumbErr) {
-            console.warn('Thumbnail failed, retrying... Attempt', `${attempt}/${maxRetries}`, thumbErr)
+            if (!thumbnailSuccess && attempt < maxRetries) {
+              await new Promise((r) => setTimeout(r, 1000))
+            }
           }
 
-          if (!thumbnailSuccess && attempt < maxRetries) {
-            await new Promise((r) => setTimeout(r, 1000))
+          if (!thumbnailSuccess) {
+            console.error('generate-thumbnail failed after all retries for scene', scene.id)
+            get().updateScene(scene.id, { status: 'error' })
           }
-        }
-
-        if (!thumbnailSuccess) {
-          console.error('generate-thumbnail failed after all retries for scene', scene.id)
+        } catch (thumbErr) {
+          console.error('generate-thumbnail exception:', thumbErr)
           get().updateScene(scene.id, { status: 'error' })
         }
-      } catch (thumbErr) {
-        console.error('generate-thumbnail exception:', thumbErr)
-        get().updateScene(scene.id, { status: 'error' })
-      }
-    }
+      })
+    )
 
     get().updateProjectStatus('idle')
   },
@@ -348,11 +352,19 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
     get().updateProjectStatus('generating_videos')
 
     const ordered = [...project.scenes].sort((a, b) => a.order - b.order)
-    for (const scene of ordered) {
-      const fresh = get().project?.scenes.find((s) => s.id === scene.id)
-      if (!fresh?.thumbnailUrl) continue
-      await get().generateVideoForScene(scene.id)
-    }
+    await Promise.all(
+      ordered.map(async (scene) => {
+        try {
+          const fresh = get().project?.scenes.find((s) => s.id === scene.id)
+          if (!fresh?.thumbnailUrl) return
+
+          await get().generateVideoForScene(scene.id)
+        } catch (e) {
+          console.error('generateVideosForProject scene failed:', scene.id, e)
+          get().updateScene(scene.id, { status: 'error' })
+        }
+      })
+    )
 
     get().updateProjectStatus('idle')
   },
