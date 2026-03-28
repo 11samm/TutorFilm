@@ -4,6 +4,9 @@ import { snapVeo31DurationSeconds } from '@/lib/veo-duration'
 import { buildVoicePrompt } from '@/lib/voice-catalog'
 import type { GenerateVideoRequest, GenerateVideoResponse } from '@/lib/types'
 
+/** Vercel / Next.js route max duration (seconds) — long Veo polls + upload. */
+export const maxDuration = 300
+
 const VIDEO_MODEL = 'veo-3.1-generate-preview'
 const VIDEOS_BUCKET = 'videos'
 const GENAI_BASE = 'https://generativelanguage.googleapis.com'
@@ -34,29 +37,51 @@ async function fetchThumbnailForVeo(
   }
 }
 
-/** Raw LRO from generativelanguage.googleapis.com (generateVideoResponse path). */
-function extractVideoBufferFromRawOperation(op: unknown): { buffer: Buffer; mimeType: string } | null {
-  const o = op as {
-    response?: {
-      generateVideoResponse?: {
-        generatedSamples?: Array<{
-          video?: { encodedVideo?: string; uri?: string; encoding?: string }
-        }>
-      }
-    }
-  }
-  const video = o.response?.generateVideoResponse?.generatedSamples?.[0]?.video
-  if (!video) return null
-  if (video.encodedVideo) {
-    return {
-      buffer: Buffer.from(video.encodedVideo, 'base64'),
-      mimeType: video.encoding?.trim() || 'video/mp4',
-    }
-  }
-  if (video.uri?.startsWith('http')) {
-    return null
+/** First generated sample's `video` object — tries several REST/LRO nestings. */
+function getFirstGeneratedVideo(op: unknown): Record<string, unknown> | null {
+  const o = op as Record<string, unknown>
+  const response = o.response as Record<string, unknown> | undefined
+  if (!response) return null
+
+  const inner = response.response as { generatedSamples?: Array<{ video?: unknown }> } | undefined
+  const gvr = response.generateVideoResponse as { generatedSamples?: Array<{ video?: unknown }> } | undefined
+  const flat = response.generatedSamples as Array<{ video?: unknown }> | undefined
+
+  const sample =
+    gvr?.generatedSamples?.[0] ?? inner?.generatedSamples?.[0] ?? flat?.[0]
+  const video = sample?.video
+  if (video && typeof video === 'object') {
+    return video as Record<string, unknown>
   }
   return null
+}
+
+function bufferFromVideoFields(video: Record<string, unknown> | null): { buffer: Buffer; mimeType: string } | null {
+  if (!video) return null
+  const videoBase64 =
+    (typeof video.videoBytes === 'string' && video.videoBytes) ||
+    (typeof video.encodedVideo === 'string' && video.encodedVideo) ||
+    (typeof video.bytesBase64Encoded === 'string' && video.bytesBase64Encoded)
+  if (!videoBase64) return null
+  const mimeType =
+    (typeof video.mimeType === 'string' && video.mimeType) ||
+    (typeof video.encoding === 'string' && video.encoding) ||
+    'video/mp4'
+  return {
+    buffer: Buffer.from(videoBase64, 'base64'),
+    mimeType: mimeType.trim(),
+  }
+}
+
+function extractVideoBufferFromRawOperation(op: unknown): { buffer: Buffer; mimeType: string } | null {
+  const generatedVideo = getFirstGeneratedVideo(op)
+  return bufferFromVideoFields(generatedVideo)
+}
+
+function extractVideoHttpUriFromRawOperation(op: unknown): string | undefined {
+  const generatedVideo = getFirstGeneratedVideo(op)
+  const uri = generatedVideo?.uri
+  return typeof uri === 'string' && uri.startsWith('http') ? uri : undefined
 }
 
 export async function POST(request: Request) {
@@ -216,7 +241,12 @@ export async function POST(request: Request) {
       if (err) {
         throw new Error(err.message ?? JSON.stringify(err))
       }
-      if (done) break
+      if (done) {
+        console.log('Veo Task Complete. Inspecting response structure...')
+        const response = operation as Record<string, unknown>
+        console.log('Response keys:', Object.keys(response))
+        break
+      }
 
       await new Promise((r) => setTimeout(r, 5000))
       polls += 1
@@ -228,14 +258,15 @@ export async function POST(request: Request) {
     }
 
     let extracted = extractVideoBufferFromRawOperation(operation)
-    const videoUri = (
-      operation as {
-        response?: { generateVideoResponse?: { generatedSamples?: Array<{ video?: { uri?: string } }> } }
-      }
-    ).response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri
+    const videoUri = extractVideoHttpUriFromRawOperation(operation)
 
     if (!extracted && videoUri?.startsWith('http')) {
-      const vidRes = await fetch(videoUri)
+      const vidRes = await fetch(videoUri, {
+        headers:
+          videoUri.includes('googleapis.com') || videoUri.includes('generativelanguage.googleapis.com')
+            ? { 'x-goog-api-key': apiKey }
+            : undefined,
+      })
       if (!vidRes.ok) {
         await supabase.from('scenes').update({ status: 'error' }).eq('id', req.sceneId)
         return NextResponse.json({ error: 'Failed to download generated video' }, { status: 502 })
@@ -252,8 +283,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No video data in response' }, { status: 502 })
     }
 
-    const path = `${req.projectId}/${req.sceneId}.mp4`
-    const { error: uploadError } = await supabase.storage.from(VIDEOS_BUCKET).upload(path, extracted.buffer, {
+    const fileName = `${req.sceneId}-${Date.now()}.mp4`
+    const { error: uploadError } = await supabase.storage.from(VIDEOS_BUCKET).upload(fileName, extracted.buffer, {
       contentType: extracted.mimeType.includes('mp4') ? 'video/mp4' : extracted.mimeType,
       upsert: true,
     })
@@ -266,7 +297,7 @@ export async function POST(request: Request) {
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from(VIDEOS_BUCKET).getPublicUrl(path)
+    } = supabase.storage.from(VIDEOS_BUCKET).getPublicUrl(fileName)
 
     const { error: finalErr } = await supabase
       .from('scenes')
@@ -278,8 +309,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: finalErr.message }, { status: 500 })
     }
 
-    const payload: GenerateVideoResponse = { videoUrl: publicUrl }
-    return NextResponse.json(payload)
+    return NextResponse.json({ videoUrl: publicUrl } satisfies GenerateVideoResponse)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error'
     console.error('generate-video:', err)

@@ -279,6 +279,7 @@ export const useTutorFilmStore = create<TutorFilmStore>((set, get) => ({
         return
       }
 
+      // Step 4/5: mirror API (Supabase `video_url` + `video_ready`) so the right pane updates without waiting on Realtime.
       get().updateScene(sceneId, {
         videoUrl: videoJson.videoUrl,
         status: 'video_ready',
