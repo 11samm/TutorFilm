@@ -2,6 +2,10 @@
 
 **AI-directed educational mini-movies for the classroom.** Describe a lesson (or upload a PDF), pick how your teacher appears and sounds, then walk through a guided pipeline—script → thumbnails → scene videos → background score → final mix—until you can **preview and download** a single polished MP4.
 
+## 🎥 Demo
+
+[Watch Demo](https://www.youtube.com/watch?v=-ETTMszW7cs)
+
 ---
 
 ## ✨ What you get
